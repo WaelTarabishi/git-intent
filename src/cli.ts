@@ -1,21 +1,81 @@
 #!/usr/bin/env node
 
-import { confirm } from "@inquirer/prompts";
+import {
+  confirm as confirmPrompt,
+  input as inputPrompt,
+  select as selectPrompt,
+} from "@inquirer/prompts";
 import { Command, Option } from "commander";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
 import {
+  validateCommitAnalysis,
+  type CommitAnalysis,
+} from "./analysis/commit-analysis-schema.js";
+import {
   validateStagedChangeAnalysis,
   type ValidatedStagedChangeAnalysis,
 } from "./analysis/analysis-schema.js";
 import { GitService } from "./git/git-service.js";
+import type { StagedChangeAnalysis } from "./git/git-types.js";
+import type { CommitAnalysisProvider } from "./providers/commit-analysis-provider.js";
+import {
+  createProvider,
+  providerIds,
+  type ProviderId,
+} from "./providers/provider-registry.js";
 import { formatFullDiff, formatInspection } from "./ui/inspection-view.js";
+import {
+  formatCommitAnalysis,
+  formatConventionalCommitMessage,
+} from "./ui/suggestion-view.js";
 
 interface InspectOptions {
   json?: boolean;
   showDiff?: boolean;
 }
+
+interface SuggestOptions {
+  json?: boolean;
+  provider: ProviderId;
+}
+
+interface SelectChoice {
+  name: string;
+  value: string;
+  description?: string;
+}
+
+export interface CliDependencies {
+  inspectStagedChanges(): Promise<StagedChangeAnalysis>;
+  resolveProvider(providerId: ProviderId): CommitAnalysisProvider;
+  confirm(options: { message: string; default?: boolean }): Promise<boolean>;
+  select(options: {
+    message: string;
+    choices: readonly SelectChoice[];
+  }): Promise<string>;
+  input(options: {
+    message: string;
+    validate(value: string): boolean | string;
+  }): Promise<string>;
+  writeOutput(value: string): void;
+  writeError(value: string): void;
+  setExitCode(value: number): void;
+}
+
+const defaultDependencies: CliDependencies = {
+  inspectStagedChanges: async () => new GitService().inspectStagedChanges(),
+  resolveProvider: createProvider,
+  confirm: async (options) => confirmPrompt(options),
+  select: async (options) => selectPrompt(options),
+  input: async (options) => inputPrompt(options),
+  writeOutput: (value) => process.stdout.write(value),
+  writeError: (value) => process.stderr.write(value),
+  setExitCode: (value) => {
+    process.exitCode = value;
+  },
+};
 
 function isPromptCancellation(error: unknown): boolean {
   return (
@@ -29,35 +89,109 @@ function isPromptCancellation(error: unknown): boolean {
 async function displayInspection(
   analysis: ValidatedStagedChangeAnalysis,
   options: InspectOptions,
+  dependencies: CliDependencies,
 ): Promise<void> {
   if (options.json === true) {
-    process.stdout.write(`${JSON.stringify(analysis, null, 2)}\n`);
+    dependencies.writeOutput(`${JSON.stringify(analysis, null, 2)}\n`);
     return;
   }
 
-  process.stdout.write(`${formatInspection(analysis)}\n`);
+  dependencies.writeOutput(`${formatInspection(analysis)}\n`);
 
   if (options.showDiff === true) {
-    process.stdout.write(`${formatFullDiff(analysis.diff)}\n`);
+    dependencies.writeOutput(`${formatFullDiff(analysis.diff)}\n`);
     return;
   }
 
-  const shouldShowDiff = await confirm({
+  const shouldShowDiff = await dependencies.confirm({
     message: "Display the full staged diff?",
     default: false,
   });
 
   if (shouldShowDiff) {
-    process.stdout.write(`${formatFullDiff(analysis.diff)}\n`);
+    dependencies.writeOutput(`${formatFullDiff(analysis.diff)}\n`);
   }
 }
 
-export function createProgram(): Command {
+async function displaySuggestionSelection(
+  analysis: CommitAnalysis,
+  dependencies: CliDependencies,
+): Promise<void> {
+  dependencies.writeOutput(`${formatCommitAnalysis(analysis)}\n`);
+
+  const choices: SelectChoice[] = analysis.suggestions.map(
+    (suggestion, index) => ({
+      name: formatConventionalCommitMessage(suggestion),
+      value: `suggestion:${index}`,
+      description: `${suggestion.explanation} (${Math.round(
+        suggestion.confidence * 100,
+      )}% confidence)`,
+    }),
+  );
+  choices.push({
+    name: "Enter a custom message",
+    value: "custom",
+    description: "Type a commit message without creating a commit.",
+  });
+
+  const selection = await dependencies.select({
+    message: "Select a commit message:",
+    choices,
+  });
+
+  let selectedMessage: string;
+  if (selection === "custom") {
+    selectedMessage = (
+      await dependencies.input({
+        message: "Custom commit message:",
+        validate: (value) =>
+          value.trim().length > 0 || "Commit message cannot be empty.",
+      })
+    ).trim();
+
+    if (selectedMessage.length === 0) {
+      throw new Error("Custom commit message cannot be empty.");
+    }
+  } else {
+    const selectedIndex = Number.parseInt(
+      selection.replace("suggestion:", ""),
+      10,
+    );
+    const suggestion = analysis.suggestions[selectedIndex];
+    if (suggestion === undefined) {
+      throw new Error("The selected commit suggestion is not available.");
+    }
+    selectedMessage = formatConventionalCommitMessage(suggestion);
+  }
+
+  dependencies.writeOutput(`Selected commit message:\n${selectedMessage}\n`);
+}
+
+function reportActionError(
+  error: unknown,
+  cancellationMessage: string,
+  fallbackMessage: string,
+  dependencies: CliDependencies,
+): void {
+  if (isPromptCancellation(error)) {
+    dependencies.writeError(`${cancellationMessage}\n`);
+    return;
+  }
+
+  const message = error instanceof Error ? error.message : fallbackMessage;
+  dependencies.writeError(`Error: ${message}\n`);
+  dependencies.setExitCode(1);
+}
+
+export function createProgram(
+  dependencyOverrides: Partial<CliDependencies> = {},
+): Command {
+  const dependencies = { ...defaultDependencies, ...dependencyOverrides };
   const program = new Command();
 
   program
-    .name("smart-commit")
-    .description("Inspect staged Git changes without modifying the repository.")
+    .name("git-intent")
+    .description("Inspect and analyze staged Git changes without modifying Git.")
     .version("0.1.0")
     .showHelpAfterError();
 
@@ -78,22 +212,60 @@ export function createProgram(): Command {
     )
     .action(async (options: InspectOptions) => {
       try {
-        const unvalidatedAnalysis =
-          await new GitService().inspectStagedChanges();
+        const unvalidatedAnalysis = await dependencies.inspectStagedChanges();
         const analysis = validateStagedChangeAnalysis(unvalidatedAnalysis);
-        await displayInspection(analysis, options);
+        await displayInspection(analysis, options, dependencies);
       } catch (error) {
-        if (isPromptCancellation(error)) {
-          process.stderr.write("Inspection cancelled.\n");
+        reportActionError(
+          error,
+          "Inspection cancelled.",
+          "Inspection failed because of an unexpected error.",
+          dependencies,
+        );
+      }
+    });
+
+  program
+    .command("suggest")
+    .description(
+      "Analyze staged changes with a provider and review commit suggestions.",
+    )
+    .option("--json", "print only the complete validated provider response as JSON")
+    .addOption(
+      new Option("--provider <provider>", "commit-analysis provider")
+        .choices([...providerIds])
+        .default("mock"),
+    )
+    .action(async (options: SuggestOptions) => {
+      try {
+        const unvalidatedStagedChanges =
+          await dependencies.inspectStagedChanges();
+        const stagedChanges = validateStagedChangeAnalysis(
+          unvalidatedStagedChanges,
+        );
+        const provider = dependencies.resolveProvider(options.provider);
+        const unvalidatedCommitAnalysis = await provider.analyze({
+          stagedChanges,
+        });
+        const commitAnalysis = validateCommitAnalysis(
+          unvalidatedCommitAnalysis,
+        );
+
+        if (options.json === true) {
+          dependencies.writeOutput(
+            `${JSON.stringify(commitAnalysis, null, 2)}\n`,
+          );
           return;
         }
 
-        const message =
-          error instanceof Error
-            ? error.message
-            : "Inspection failed because of an unexpected error.";
-        process.stderr.write(`Error: ${message}\n`);
-        process.exitCode = 1;
+        await displaySuggestionSelection(commitAnalysis, dependencies);
+      } catch (error) {
+        reportActionError(
+          error,
+          "Suggestion selection cancelled.",
+          "Commit analysis failed because of an unexpected error.",
+          dependencies,
+        );
       }
     });
 
@@ -108,4 +280,3 @@ const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
 if (entryPath !== undefined && fileURLToPath(import.meta.url) === entryPath) {
   await runCli();
 }
-

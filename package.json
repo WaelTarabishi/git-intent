@@ -1,9 +1,10 @@
 {
   "name": "smart-commit",
   "version": "0.1.0",
-  "description": "A read-only staged Git change inspection CLI.",
+  "description": "A read-only staged Git inspection and commit-analysis CLI.",
   "type": "module",
   "bin": {
+    "git-intent": "./dist/cli.js",
     "smart-commit": "./dist/cli.js"
   },
   "files": [
