@@ -180,6 +180,57 @@ describe("interactive suggestion TUI", () => {
     expect(output).not.toContain("Preview");
   });
 
+  it("renders every body item without a hidden-more summary", () => {
+    const details = [
+      "First implementation detail.",
+      "Second implementation detail.",
+      "Third implementation detail.",
+      "Fourth implementation detail.",
+    ];
+    const tests = [
+      "First test note.",
+      "Second test note.",
+      "Third test note.",
+    ];
+    const breakingChanges = [
+      "First breaking change.",
+      "Second breaking change.",
+    ];
+    const output = renderToString(
+      <SuggestionScreen
+        analysis={{
+          ...analysis,
+          suggestions: analysis.suggestions.map((suggestion, index) =>
+            index === analysis.recommendedSuggestionIndex
+              ? {
+                  ...suggestion,
+                  details,
+                  tests,
+                  breakingChanges,
+                }
+              : suggestion,
+          ),
+        }}
+        colorsEnabled={false}
+        elapsedSeconds={2}
+        fileCount={4}
+        frameIndex={0}
+        loading={false}
+        providerName="Gemini"
+        recentCommitCount={2}
+        selectedPosition={0}
+        themeName="aurora"
+        width={72}
+      />,
+      { columns: 72 },
+    );
+
+    for (const item of [...details, ...tests, ...breakingChanges]) {
+      expect(output).toContain(item);
+    }
+    expect(output).not.toMatch(/\+\s+\d+\s+more/u);
+  });
+
   it("wraps long commit subjects without replacing text with dots", () => {
     const longDescription =
       "keep interactive command sessions alive through every final prompt";

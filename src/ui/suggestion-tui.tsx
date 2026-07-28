@@ -264,18 +264,6 @@ export function SuggestionScreen({
     selectedIndex === undefined
       ? undefined
       : analysis?.suggestions[selectedIndex];
-  const visibleDetails = selectedSuggestion?.details.slice(0, 3) ?? [];
-  const visibleTests = selectedSuggestion?.tests.slice(0, 2) ?? [];
-  const visibleBreakingChanges =
-    selectedSuggestion?.breakingChanges.slice(0, 1) ?? [];
-  const hiddenPreviewItems =
-    selectedSuggestion === undefined
-      ? 0
-      : selectedSuggestion.details.length -
-        visibleDetails.length +
-        (selectedSuggestion.tests.length - visibleTests.length) +
-        (selectedSuggestion.breakingChanges.length -
-          visibleBreakingChanges.length);
 
   return (
     <Box
@@ -484,7 +472,7 @@ export function SuggestionScreen({
               >
                 Details for underlined commit
               </Tone>
-              {visibleDetails.map((detail) => (
+              {selectedSuggestion.details.map((detail) => (
                 <Box key={detail}>
                   <Tone
                     palette={palette}
@@ -496,7 +484,7 @@ export function SuggestionScreen({
                   <Text> {detail}</Text>
                 </Box>
               ))}
-              {visibleTests.map((test) => (
+              {selectedSuggestion.tests.map((test) => (
                 <Box key={test}>
                   <Tone
                     palette={palette}
@@ -508,7 +496,7 @@ export function SuggestionScreen({
                   <Text> {test}</Text>
                 </Box>
               ))}
-              {visibleBreakingChanges.map((breakingChange) => (
+              {selectedSuggestion.breakingChanges.map((breakingChange) => (
                 <Box key={breakingChange}>
                   <Tone
                     palette={palette}
@@ -520,16 +508,6 @@ export function SuggestionScreen({
                   <Text> {breakingChange}</Text>
                 </Box>
               ))}
-              {hiddenPreviewItems > 0 ? (
-                <Tone
-                  palette={palette}
-                  colorsEnabled={colorsEnabled}
-                  role="muted"
-                >
-                  + {hiddenPreviewItems} more{" "}
-                  {hiddenPreviewItems === 1 ? "item" : "items"} included
-                </Tone>
-              ) : null}
             </Box>
           )}
 
