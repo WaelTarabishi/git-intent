@@ -43,9 +43,14 @@ import {
   formatCommitSuggestionPreview,
   formatStyledConventionalCommitSubject,
 } from "./ui/suggestion-view.js";
+import type {
+  SuggestionTuiOptions,
+  SuggestionTuiResult,
+} from "./ui/suggestion-tui.js";
 import {
   createTheme,
   defaultThemeName,
+  terminalColorsEnabled,
   themeNames,
   type TerminalTheme,
   type ThemeName,
@@ -67,6 +72,7 @@ interface SuggestOptions {
   geminiTimeout?: number;
   theme?: ThemeName;
   color?: boolean;
+  animation?: boolean;
 }
 
 interface SelectChoice {
@@ -91,6 +97,10 @@ export interface CliDependencies {
     context: GitPushContext,
     remote?: string,
   ): Promise<void>;
+  isInteractiveTerminal(): boolean;
+  runSuggestionTui(
+    options: SuggestionTuiOptions,
+  ): Promise<SuggestionTuiResult>;
   confirm(options: { message: string; default?: boolean }): Promise<boolean>;
   select(options: {
     message: string;
@@ -113,6 +123,14 @@ const defaultDependencies: CliDependencies = {
   getPushContext: async () => new GitService().getPushContext(),
   pushCurrentBranch: async (context, remote) =>
     new GitService().pushCurrentBranch(context, remote),
+  isInteractiveTerminal: () =>
+    process.stdin.isTTY === true && process.stdout.isTTY === true,
+  runSuggestionTui: async (options) => {
+    const { runSuggestionTui } = await import(
+      "./ui/suggestion-tui.js"
+    );
+    return runSuggestionTui(options);
+  },
   confirm: async (options) => confirmPrompt(options),
   select: async (options) => selectPrompt(options),
   input: async (options) => inputPrompt(options),
@@ -276,6 +294,39 @@ async function displayInspection(
   }
 }
 
+async function requestCustomCommitMessage(
+  dependencies: CliDependencies,
+): Promise<string> {
+  const selectedMessage = (
+    await dependencies.input({
+      message: "Custom commit message:",
+      validate: (value) =>
+        value.trim().length > 0 || "Commit message cannot be empty.",
+    })
+  ).trim();
+
+  if (selectedMessage.length === 0) {
+    throw new Error("Custom commit message cannot be empty.");
+  }
+  return selectedMessage;
+}
+
+async function resolveTuiCommitMessage(
+  result: SuggestionTuiResult,
+  analysis: CommitAnalysis,
+  dependencies: CliDependencies,
+): Promise<string> {
+  if (result.kind === "custom") {
+    return requestCustomCommitMessage(dependencies);
+  }
+
+  const suggestion = analysis.suggestions[result.suggestionIndex];
+  if (suggestion === undefined) {
+    throw new Error("The selected commit suggestion is not available.");
+  }
+  return formatConventionalCommitMessage(suggestion);
+}
+
 async function displaySuggestionSelection(
   analysis: CommitAnalysis,
   theme: TerminalTheme,
@@ -323,18 +374,7 @@ async function displaySuggestionSelection(
     });
 
     if (selection === "custom") {
-      const selectedMessage = (
-        await dependencies.input({
-          message: "Custom commit message:",
-          validate: (value) =>
-            value.trim().length > 0 || "Commit message cannot be empty.",
-        })
-      ).trim();
-
-      if (selectedMessage.length === 0) {
-        throw new Error("Custom commit message cannot be empty.");
-      }
-      return selectedMessage;
+      return requestCustomCommitMessage(dependencies);
     }
 
     const selectedIndex = Number.parseInt(
@@ -605,7 +645,8 @@ export function createProgram(
       )
         .argParser(parsePositiveInteger)
         .implies({ provider: "gemini" }),
-    );
+    )
+    .option("--no-animation", "disable animated terminal updates");
   addAppearanceOptions(suggestCommand).action(async (options: SuggestOptions) => {
     const theme = resolveTheme(options);
     activeTheme = theme;
@@ -627,8 +668,11 @@ export function createProgram(
               selectedProvider.configuration,
             );
 
+      const useTui =
+        options.json !== true && dependencies.isInteractiveTerminal();
       if (
         options.json !== true &&
+        !useTui &&
         provider.progressMessage !== undefined
       ) {
         dependencies.writeOutput(
@@ -636,26 +680,55 @@ export function createProgram(
         );
       }
 
-      const unvalidatedCommitAnalysis = await provider.analyze({
-        stagedChanges,
-      });
-      const commitAnalysis = validateCommitAnalysis(
-        unvalidatedCommitAnalysis,
-      );
+      const startedAtMs = Date.now();
+      const commitAnalysisPromise = provider
+        .analyze({ stagedChanges })
+        .then((analysis) => validateCommitAnalysis(analysis));
 
       if (options.json === true) {
+        const commitAnalysis = await commitAnalysisPromise;
         dependencies.writeOutput(
           `${JSON.stringify(commitAnalysis, null, 2)}\n`,
         );
         return;
       }
 
-      const selectedMessage = await displaySuggestionSelection(
-        commitAnalysis,
+      let selectedMessage: string;
+      if (useTui) {
+        const providerName = providerPresentation(
+          selectedProvider.providerId,
+        ).displayName.replace(/\s+\(.+\)$/u, "");
+        const result = await dependencies.runSuggestionTui({
+          analysisPromise: commitAnalysisPromise,
+          animation: options.animation !== false,
+          colorsEnabled: terminalColorsEnabled(options.color),
+          fileCount: stagedChanges.files.length,
+          providerName,
+          recentCommitCount:
+            stagedChanges.recentCommitMessages?.length ?? 0,
+          startedAtMs,
+          themeName: options.theme ?? defaultThemeName,
+        });
+        const commitAnalysis = await commitAnalysisPromise;
+        selectedMessage = await resolveTuiCommitMessage(
+          result,
+          commitAnalysis,
+          dependencies,
+        );
+      } else {
+        const commitAnalysis = await commitAnalysisPromise;
+        selectedMessage = await displaySuggestionSelection(
+          commitAnalysis,
+          theme,
+          dependencies,
+        );
+      }
+
+      await createCommitAndOfferPush(
+        selectedMessage,
         theme,
         dependencies,
       );
-      await createCommitAndOfferPush(selectedMessage, theme, dependencies);
     } catch (error) {
       reportActionError(
         error,

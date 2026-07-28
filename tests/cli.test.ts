@@ -495,6 +495,67 @@ describe("suggest command", () => {
     expect(select).toHaveBeenCalledOnce();
   });
 
+  it("uses the live TUI in a terminal and forwards appearance options", async () => {
+    const select = vi.fn(async () => {
+      throw new Error("the legacy suggestion prompt must not be called");
+    });
+    const createCommit = vi.fn(async () => "tui1234");
+    const runSuggestionTui = vi.fn(async (options) => {
+      expect(await options.analysisPromise).toEqual(commitAnalysis);
+      expect(options).toMatchObject({
+        animation: false,
+        colorsEnabled: false,
+        fileCount: 1,
+        providerName: "Ollama",
+        recentCommitCount: 0,
+        themeName: "sunset",
+      });
+      return {
+        kind: "suggestion" as const,
+        suggestionIndex: 0,
+      };
+    });
+
+    await createProgram({
+      ...localCommitDependencies,
+      createCommit,
+      inspectStagedChanges: async () => stagedChanges,
+      isInteractiveTerminal: () => true,
+      resolveProvider: () => ({
+        id: "ollama",
+        analyze: async () => commitAnalysis,
+      }),
+      runSuggestionTui,
+      select,
+      writeOutput: () => undefined,
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--model",
+      "test-coder:7b",
+      "--theme",
+      "sunset",
+      "--no-color",
+      "--no-animation",
+    ]);
+
+    expect(runSuggestionTui).toHaveBeenCalledOnce();
+    expect(select).not.toHaveBeenCalled();
+    expect(createCommit).toHaveBeenCalledWith(
+      [
+        "feat(cli): add commit suggestions",
+        "",
+        "- Add a provider-backed flow for reviewing commit suggestions.",
+        "",
+        "Tests:",
+        "- Cover interactive suggestion selection.",
+      ].join("\n"),
+    );
+  });
+
   it("puts the recommendation first and previews only the selected detailed message", async () => {
     const output: string[] = [];
     const threeSuggestions = {

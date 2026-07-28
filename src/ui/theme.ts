@@ -95,6 +95,25 @@ interface CreateThemeOptions {
 
 export const defaultThemeName: ThemeName = "aurora";
 
+export function terminalColorsEnabled(color?: boolean): boolean {
+  if (color === false) {
+    return false;
+  }
+  if (color === true) {
+    return true;
+  }
+  if (process.env.FORCE_COLOR === "0") {
+    return false;
+  }
+  if (process.env.FORCE_COLOR !== undefined) {
+    return true;
+  }
+  return (
+    process.env.NO_COLOR === undefined &&
+    process.env.NODE_DISABLE_COLORS === undefined
+  );
+}
+
 export function createTheme(
   name: ThemeName = defaultThemeName,
   options: CreateThemeOptions = {},
@@ -103,14 +122,7 @@ export function createTheme(
   const stream = options.stream ?? process.stdout;
 
   const paint = (style: TextStyle, text: string): string => {
-    const environmentDisablesColor =
-      process.env.FORCE_COLOR === undefined &&
-      (process.env.NO_COLOR !== undefined ||
-        process.env.NODE_DISABLE_COLORS !== undefined);
-    if (
-      options.color === false ||
-      (options.color !== true && environmentDisablesColor)
-    ) {
+    if (!terminalColorsEnabled(options.color)) {
       return text;
     }
 

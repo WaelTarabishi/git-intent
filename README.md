@@ -33,6 +33,32 @@ npm test
 
 ## Terminal themes
 
+In a real terminal, `suggest` opens a responsive interactive interface with a
+live animated analysis indicator, elapsed time, keyboard navigation, confidence
+scores, and an updating commit preview. The provider's recommended suggestion
+starts selected.
+
+```text
+╭──────────────────────────────────────────────────────────────╮
+│ ◆ Git Intent                           Gemini · Aurora theme │
+╰──────────────────────────────────────────────────────────────╯
+
+  ✓ Inspected 12 staged files
+  ✓ Loaded 5 recent commit subjects
+  ✻ Analyzing changes with Gemini…                         4.2s
+```
+
+Click a suggestion to select it; click the selected suggestion again to accept
+it. The `[ Accept ]`, `[ Custom ]`, and `[ Cancel ]` actions are also clickable
+in terminals that support SGR mouse events. With the keyboard, use `↑` and `↓`
+to navigate (`J` and `K` also work), `Enter` to accept, `C` for a custom
+message, and `Esc` or `Ctrl+C` to cancel. Disable motion while keeping the
+interactive screen with `--no-animation`:
+
+```sh
+git-intent suggest --no-animation
+```
+
 Interactive output uses a colorful semantic theme for headings, file statuses,
 statistics, recommendations, confidence, warnings, errors, commits, and pushes.
 The default `aurora` palette is the most vibrant. Choose a palette independently
@@ -55,7 +81,8 @@ git-intent suggest --no-color
 
 Colors are also suppressed automatically when the output stream does not
 support them or when `NO_COLOR` is set. JSON output remains valid JSON and does
-not contain terminal styling.
+not contain terminal styling. Piped and other non-TTY use keeps the plain prompt
+flow for compatibility instead of emitting animation control sequences.
 
 ## Inspect staged changes
 
@@ -249,11 +276,14 @@ The CLI contains no provider HTTP or response-parsing logic.
 - `execa` invokes the installed `git` executable with argument arrays and no
   shell command construction.
 - `@inquirer/prompts` handles provider, model, suggestion, and custom-message
-  selection.
+  selection in the plain fallback flow.
+- `ink` and `react` render the responsive animated suggestion interface in a
+  real terminal.
 - `zod` validates staged-change data and provider responses before output.
 - `typescript` type-checks and builds the CLI.
 - `tsx` runs the TypeScript entry point during development.
 - `@types/node` supplies Node.js runtime types.
+- `@types/react` supplies the JSX and React component types used by the TUI.
 - `vitest` runs unit, CLI, and Git integration tests.
 
 ## Privacy and safety limitations

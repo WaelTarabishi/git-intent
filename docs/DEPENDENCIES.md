@@ -15,6 +15,8 @@ For this project, the initial runtime dependencies are:
 - `commander`
 - `execa`
 - `@inquirer/prompts`
+- `ink`
+- `react`
 - `zod`
 
 For example, `commander` reads CLI options and `execa` runs Git safely. These tasks happen on the user's computer when the CLI runs, so the packages belong in `dependencies`.
@@ -28,6 +30,7 @@ For this project, the initial development dependencies are:
 - `typescript`
 - `tsx`
 - `@types/node`
+- `@types/react`
 - `vitest`
 
 For example, TypeScript checks source types and Vitest runs the test suite while the package is being developed.
@@ -137,6 +140,30 @@ requests, provider contracts, validated suggestions, and test fixtures.
 
 **Why this dependency:** Building accessible selection lists, retries, cancellation, and consistent prompts with `readline` would add substantial UI code unrelated to the project's core purpose.
 
+### `ink` and `react`
+
+**Problem they solve:** Ink renders React components as terminal output. Together
+they provide reusable layout, state, keyboard input, and live updates for the
+interactive suggestion screen.
+
+**Where they are used:** The `suggest` command uses them only when both standard
+input and standard output are attached to a real terminal. The interface shows
+animated provider progress, suggestion navigation, confidence scores, and a
+responsive preview. JSON and non-TTY output do not use the live renderer.
+
+**Conceptual example:** While a provider analyzes staged changes, React updates
+an Ink spinner and elapsed timer in place. When analysis finishes, the same
+screen becomes a keyboard-controlled suggestion list.
+
+**Status:** Required now as runtime dependencies.
+
+**Built-in Node.js alternative:** ANSI escape sequences and `node:readline` can
+redraw terminal lines and process keys manually.
+
+**Why these dependencies:** Ink keeps terminal layout and interaction
+component-based, testable, and responsive without maintaining a custom terminal
+renderer. React is Ink's runtime component and state model.
+
 ### `zod`
 
 **Problem it solves:** Zod validates unknown data at runtime and converts successful input into a known shape. TypeScript alone cannot prove that JSON returned by a model follows the requested format.
@@ -178,6 +205,20 @@ requests, provider contracts, validated suggestions, and test fixtures.
 **Built-in Node.js alternative:** Node.js provides the runtime APIs but does not provide all of the TypeScript declarations needed by a typical TypeScript project.
 
 **Why this dependency:** Without these declarations, Node.js APIs would be missing types or would require unsafe local declarations.
+
+### `@types/react`
+
+**Problem it solves:** It provides TypeScript declarations for React components,
+hooks, JSX properties, and child values.
+
+**Where it is used:** In the Ink-based interactive terminal screen and its
+rendering tests.
+
+**Status:** Required now as a development dependency.
+
+**Why this dependency:** React is a runtime dependency, while its type
+declarations are needed only when developing and compiling the TypeScript
+source.
 
 ### `vitest`
 
