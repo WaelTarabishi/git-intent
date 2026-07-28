@@ -27,11 +27,17 @@ const commitAnalysis = {
   summary: "The staged changes update the CLI.",
   splitRecommended: true,
   splitReason: "The source and documentation updates can stand alone.",
+  recommendedSuggestionIndex: 0,
   suggestions: [
     {
       type: "feat" as const,
       scope: "cli",
       description: "add commit suggestions",
+      details: [
+        "Add a provider-backed flow for reviewing commit suggestions.",
+      ],
+      tests: ["Cover interactive suggestion selection."],
+      breakingChanges: [],
       explanation: "The staged diff adds a new user-facing command.",
       confidence: 0.9,
     },
@@ -168,6 +174,7 @@ describe("suggest command", () => {
       listProviderModels: listModels,
       resolveProvider,
       select,
+      confirm: async () => true,
       writeOutput: () => undefined,
     }).parseAsync(["node", "git-intent", "generate"]);
 
@@ -178,7 +185,7 @@ describe("suggest command", () => {
     expect(select.mock.calls.map(([options]) => options.message)).toEqual([
       "Select a commit-analysis provider:",
       "Select an installed Ollama model:",
-      "Select a commit message:",
+      "Choose a commit message to preview:",
     ]);
   });
 
@@ -212,6 +219,104 @@ describe("suggest command", () => {
       model: "cli-coder:7b",
       timeoutMs: 45_000,
     });
+  });
+
+  it("selects Gemini without loading Ollama models", async () => {
+    const selections = ["gemini", "suggestion:0"];
+    const select = vi.fn(async () => selections.shift() ?? "");
+    const listModels = vi.fn(async () => {
+      throw new Error("Gemini must not load Ollama models");
+    });
+    const resolveProvider = vi.fn((): CommitAnalysisProvider => ({
+      id: "gemini",
+      analyze: async () => commitAnalysis,
+    }));
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      listProviderModels: listModels,
+      resolveProvider,
+      select,
+      confirm: async () => true,
+      writeOutput: () => undefined,
+    }).parseAsync(["node", "git-intent", "suggest"]);
+
+    expect(listModels).not.toHaveBeenCalled();
+    expect(resolveProvider).toHaveBeenCalledWith("gemini");
+    expect(select.mock.calls.map(([options]) => options.message)).toEqual([
+      "Select a commit-analysis provider:",
+      "Choose a commit message to preview:",
+    ]);
+  });
+
+  it("passes Gemini model and timeout overrides to provider resolution", async () => {
+    const resolveProvider = vi.fn((): CommitAnalysisProvider => ({
+      id: "gemini",
+      analyze: async () => commitAnalysis,
+    }));
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider,
+      writeOutput: () => undefined,
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "gemini",
+      "--model",
+      "gemini-test",
+      "--gemini-timeout",
+      "45000",
+      "--json",
+    ]);
+
+    expect(resolveProvider).toHaveBeenCalledWith("gemini", {
+      model: "gemini-test",
+      timeoutMs: 45_000,
+    });
+  });
+
+  it("uses the registered Gemini provider with an environment API key", async () => {
+    vi.stubEnv("GEMINI_API_KEY", "test-key");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            candidates: [
+              {
+                content: {
+                  parts: [{ text: JSON.stringify(commitAnalysis) }],
+                },
+              },
+            ],
+          }),
+        ),
+      ),
+    );
+    const output: string[] = [];
+    const errors: string[] = [];
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      writeOutput: (value) => output.push(value),
+      writeError: (value) => errors.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "gemini",
+      "--model",
+      "gemini-test",
+      "--json",
+    ]);
+
+    expect(JSON.parse(output.join(""))).toEqual(commitAnalysis);
+    expect(errors.join("")).toContain("Gemini is a cloud provider");
+    expect(fetch).toHaveBeenCalledOnce();
   });
 
   it("does not print Ollama progress or prompt in JSON mode", async () => {
@@ -254,6 +359,7 @@ describe("suggest command", () => {
         analyze: async () => commitAnalysis,
       }),
       select: async () => "suggestion:0",
+      confirm: async () => true,
       writeOutput: (value) => output.push(value),
     }).parseAsync([
       "node",
@@ -324,6 +430,7 @@ describe("suggest command", () => {
         analyze: async () => commitAnalysis,
       }),
       select,
+      confirm: async () => true,
       writeOutput: (value) => output.push(value),
     }).parseAsync([
       "node",
@@ -339,9 +446,90 @@ describe("suggest command", () => {
       "Warning: Splitting the staged changes is recommended.",
     );
     expect(output.join("")).toContain(
-      "Selected commit message:\nfeat(cli): add commit suggestions",
+      [
+        "Selected commit message:",
+        "feat(cli): add commit suggestions",
+        "",
+        "- Add a provider-backed flow for reviewing commit suggestions.",
+        "",
+        "Tests:",
+        "- Cover interactive suggestion selection.",
+      ].join("\n"),
     );
     expect(select).toHaveBeenCalledOnce();
+  });
+
+  it("puts the recommendation first and previews only the selected detailed message", async () => {
+    const output: string[] = [];
+    const threeSuggestions = {
+      ...commitAnalysis,
+      splitRecommended: false,
+      splitReason: undefined,
+      recommendedSuggestionIndex: 1,
+      suggestions: [
+        {
+          ...commitAnalysis.suggestions[0],
+          type: "refactor" as const,
+          description: "restructure commit analysis",
+          details: ["Refactor the shared analysis flow."],
+          tests: [],
+          explanation: "An implementation-focused alternative.",
+          confidence: 0.76,
+        },
+        {
+          ...commitAnalysis.suggestions[0],
+          description: "improve commit suggestion review",
+          details: ["Show a focused preview after compact selection."],
+          tests: ["Cover recommended suggestion ordering."],
+          explanation: "The best description of the user-facing change.",
+          confidence: 0.96,
+        },
+        {
+          ...commitAnalysis.suggestions[0],
+          type: "test" as const,
+          scope: undefined,
+          description: "expand commit suggestion coverage",
+          details: ["Exercise detailed suggestion validation."],
+          tests: ["Add schema and UI regression coverage."],
+          explanation: "A test-focused alternative.",
+          confidence: 0.7,
+        },
+      ],
+    };
+    const select = vi.fn(async () => "suggestion:1");
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider: () => ({
+        id: "ollama",
+        analyze: async () => threeSuggestions,
+      }),
+      select,
+      confirm: async () => true,
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--model",
+      "test-coder:7b",
+    ]);
+
+    const choices = select.mock.calls[0]?.[0].choices ?? [];
+    expect(choices[0]?.value).toBe("suggestion:1");
+    expect(choices[0]?.name).toContain("★ Recommended");
+    expect(JSON.stringify(choices)).not.toContain(
+      "Show a focused preview after compact selection.",
+    );
+    expect(output.join("")).toContain("Recommended commit");
+    expect(output.join("")).toContain(
+      "Show a focused preview after compact selection.",
+    );
+    expect(output.join("")).not.toContain(
+      "Refactor the shared analysis flow.",
+    );
   });
 
   it("lets the developer enter a custom message", async () => {

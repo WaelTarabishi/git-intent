@@ -49,6 +49,9 @@ describe("buildCommitAnalysisPrompt", () => {
       "between one and three Conventional Commit suggestions",
     );
     expect(result.prompt).toContain("splitRecommended to true");
+    expect(result.prompt).toContain("concrete implementation details");
+    expect(result.prompt).toContain("recommendedSuggestionIndex");
+    expect(result.prompt).toContain("Return an empty tests array");
     expect(result.prompt).toContain("Do not invent");
     expect(result.format).toMatchObject({
       type: "object",

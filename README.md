@@ -1,9 +1,8 @@
 # Git Intent
 
 Git Intent is a read-only staged-change inspection and commit-analysis CLI.
-It generates structured suggestions with a locally running Ollama model. It
-never stages files, creates commits, pushes, reads cloud API keys, or calls
-OpenAI or Gemini.
+It generates structured suggestions with either a locally running Ollama model
+or Google Gemini. It never stages files, creates commits, or pushes.
 
 ## Requirements and installation
 
@@ -18,9 +17,9 @@ npm link
 The executable is available as `git-intent`. The existing `smart-commit`
 executable remains as a compatibility alias.
 
-Ollama is required for `suggest` and `generate`, but not for `inspect`. See
-[docs/OLLAMA.md](docs/OLLAMA.md) for platform installation links and
-local-model setup.
+For local analysis, install Ollama and see [docs/OLLAMA.md](docs/OLLAMA.md).
+For cloud analysis, create a Gemini API key and see
+[docs/GEMINI.md](docs/GEMINI.md). Neither provider is required for `inspect`.
 
 ## Development commands
 
@@ -64,13 +63,18 @@ git-intent generate
 ```
 
 `generate` is an alias of `suggest` and accepts the same options.
-The command first asks you to select a provider, then loads the models installed
-in the selected Ollama server and asks you to choose one.
+The command first asks you to select a provider. Ollama also loads the models
+installed in the selected server and asks you to choose one. Gemini uses its
+configured model or the documented default.
 
 The interactive command displays the provider summary, warns if the validated
-response recommends splitting, shows between one and three suggestions, and
-lets the developer select a suggestion or enter a custom message. It only
-prints the selected message. It never runs `git commit`.
+response recommends splitting, and presents a compact list of between one and
+three commit subjects. The provider's recommended suggestion appears first.
+Only the chosen suggestion expands into a detailed preview with its
+implementation details, test changes, breaking changes, explanation, and
+confidence. The developer can accept the preview, return to the compact list,
+or enter a custom message. Git Intent only prints the selected message; it
+never runs `git commit`.
 
 For automation or inspection, return only the complete validated provider
 response:
@@ -114,6 +118,64 @@ The Ollama provider refuses known cloud-model names and direct `ollama.com`
 endpoints. A custom endpoint can still be remote, so verify that it is controlled
 by you before analyzing sensitive work.
 
+### Gemini configuration
+
+Create an API key in
+[Google AI Studio](https://aistudio.google.com/app/apikey), then expose it to
+the process through `GEMINI_API_KEY`. `GOOGLE_API_KEY` is also supported and
+takes precedence when both variables are set. Do not pass keys on the command
+line or commit them to Git.
+
+The CLI automatically loads a `.env` file from the directory where you run it.
+Copy the included example and replace the placeholder:
+
+```powershell
+Copy-Item .env.example .env
+```
+
+```env
+GEMINI_API_KEY=your-api-key
+```
+
+`.env` is already ignored by Git. A variable set by the shell takes precedence
+over the value in the file.
+
+The default model is `gemini-3.6-flash`, and the default timeout is 120 seconds.
+
+| Setting | Environment variable | CLI override |
+| --- | --- | --- |
+| API key | `GEMINI_API_KEY` or `GOOGLE_API_KEY` | None |
+| Model | `GIT_INTENT_GEMINI_MODEL` | `--model <model>` |
+| Timeout in milliseconds | `GIT_INTENT_GEMINI_TIMEOUT_MS` | `--gemini-timeout <milliseconds>` |
+
+PowerShell:
+
+```powershell
+$env:GEMINI_API_KEY = "your-api-key"
+git-intent suggest --provider gemini
+```
+
+Bash:
+
+```sh
+export GEMINI_API_KEY="your-api-key"
+git-intent suggest --provider gemini
+```
+
+For non-interactive JSON output:
+
+```sh
+git-intent suggest \
+  --provider gemini \
+  --model gemini-3.6-flash \
+  --json
+```
+
+Gemini is a cloud provider. Selecting it sends changed filenames, up to five
+recent commit subjects, and the staged diff to Google. Git Intent prints that
+disclosure and any sensitive-filename warning to standard error, including in
+JSON mode.
+
 ## Structured provider response
 
 Every provider result passes through the same Zod schema. The response contains:
@@ -121,7 +183,9 @@ Every provider result passes through the same Zod schema. The response contains:
 - A staged-change summary.
 - A split recommendation and optional reason.
 - Between one and three suggestions.
-- A Conventional Commit type, optional scope, description, explanation, and
+- The zero-based index of the provider's recommended suggestion.
+- A Conventional Commit type, optional scope, description, one to six
+  implementation details, test details, breaking changes, explanation, and
   confidence score from 0 through 1 for every suggestion.
 
 The accepted Conventional Commit types are `build`, `chore`, `ci`, `docs`,
@@ -133,7 +197,7 @@ The accepted Conventional Commit types are `build`, `chore`, `ci`, `docs`,
   change data.
 - A provider receives that data through the common `CommitAnalysisProvider`
   interface.
-- The Ollama provider owns environment configuration, local HTTP communication,
+- Each provider owns its environment configuration, HTTP communication,
   timeouts, error mapping, response parsing, and Zod validation.
 - The Ollama model discovery layer reads `/api/tags` and exposes installed
   local models to the interactive selector.
@@ -146,7 +210,7 @@ The accepted Conventional Commit types are `build`, `chore`, `ci`, `docs`,
 - The CLI selects a provider and installed model without owning HTTP request
   logic.
 
-The CLI contains no Ollama HTTP or response-parsing logic.
+The CLI contains no provider HTTP or response-parsing logic.
 
 ## Package responsibilities
 
@@ -164,18 +228,17 @@ The CLI contains no Ollama HTTP or response-parsing logic.
 
 ## Privacy and safety limitations
 
-The Ollama provider sends changed filenames, up to five recent commit subjects,
-and the complete staged diff to the configured Ollama endpoint. The request is
-rejected when the diff exceeds 100,000 characters; Git Intent does not silently
-truncate it. Stage fewer related changes before retrying.
+Both providers send changed filenames, up to five recent commit subjects, and
+the complete staged diff to their configured endpoints. The request is rejected
+when the diff exceeds 100,000 characters; Git Intent does not silently truncate
+it. Stage fewer related changes before retrying.
 
 Recognizable `.env`, private-key, credential, Terraform state, and secret
-manifest filenames produce a warning but are not automatically blocked because
-the provider is local by default. Filename detection is heuristic and does not
-inspect or redact every possible secret. Local processing reduces cloud
-exposure, but it does not guarantee complete security: the endpoint may be
-remote, the model/runtime may log data, aliases may conceal offloading behavior,
-and sensitive content may exist in ordinary-looking files.
+manifest filenames produce a warning but are not automatically blocked.
+Filename detection is heuristic and does not inspect or redact every possible
+secret. Ollama processing reduces cloud exposure when its endpoint is genuinely
+local. Gemini sends staged content to Google. Sensitive content may also exist
+in ordinary-looking files, so review the staged diff before choosing a provider.
 
 Model output can still be inaccurate. Git Intent validates its structure, but
 the developer must review the meaning of every suggestion. Binary patches also
@@ -184,7 +247,6 @@ model.
 
 ## Planned phases
 
-- Phase 4 may add explicitly opt-in cloud providers with disclosure and
-  credential handling. OpenAI and Gemini are not implemented in this phase.
+- A future phase may add other explicitly selected cloud providers.
 - Phase 5 plans mixed-change detection and atomic-commit recommendations without
   silently changing the staging area.

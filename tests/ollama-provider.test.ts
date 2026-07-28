@@ -37,11 +37,15 @@ const stagedChanges: ValidatedStagedChangeAnalysis = {
 const validCommitAnalysis = {
   summary: "The staged changes update the CLI provider flow.",
   splitRecommended: false,
+  recommendedSuggestionIndex: 0,
   suggestions: [
     {
       type: "feat",
       scope: "cli",
       description: "add local commit analysis",
+      details: ["Analyze staged changes through a local Ollama model."],
+      tests: [],
+      breakingChanges: [],
       explanation: "The staged diff adds local provider behavior.",
       confidence: 0.91,
     },

@@ -66,10 +66,14 @@ describe("suggest command integration", () => {
           response: JSON.stringify({
             summary: "The staged change adds a feature flag.",
             splitRecommended: false,
+            recommendedSuggestionIndex: 0,
             suggestions: [
               {
                 type: "feat",
                 description: "add feature flag",
+                details: ["Expose a new enabled feature flag."],
+                tests: [],
+                breakingChanges: [],
                 explanation: "The staged file introduces a feature flag.",
                 confidence: 0.95,
               },

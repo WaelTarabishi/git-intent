@@ -8,11 +8,17 @@ import {
 const validCommitAnalysis = {
   summary: "The staged changes update the CLI.",
   splitRecommended: false,
+  recommendedSuggestionIndex: 0,
   suggestions: [
     {
       type: "feat",
       scope: "cli",
       description: "add commit suggestions",
+      details: [
+        "Add a provider-backed command for reviewing commit suggestions.",
+      ],
+      tests: ["Cover the new suggestion command."],
+      breakingChanges: [],
       explanation: "The staged diff adds a new user-facing command.",
       confidence: 0.9,
     },
@@ -68,6 +74,29 @@ describe("commitAnalysisSchema", () => {
     const result = commitAnalysisSchema.safeParse({
       ...validCommitAnalysis,
       suggestions: [],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a recommended index that does not reference a suggestion", () => {
+    const result = commitAnalysisSchema.safeParse({
+      ...validCommitAnalysis,
+      recommendedSuggestionIndex: 1,
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("requires at least one detail for every suggestion", () => {
+    const result = commitAnalysisSchema.safeParse({
+      ...validCommitAnalysis,
+      suggestions: [
+        {
+          ...validCommitAnalysis.suggestions[0],
+          details: [],
+        },
+      ],
     });
 
     expect(result.success).toBe(false);

@@ -34,16 +34,37 @@ export const commitSuggestionSchema = z.strictObject({
     )
     .optional(),
   description: singleLineText("Description", 100),
+  details: z
+    .array(singleLineText("Detail", 200))
+    .min(1, "At least one implementation detail is required")
+    .max(6, "A suggestion can contain at most 6 implementation details"),
+  tests: z
+    .array(singleLineText("Test", 200))
+    .max(4, "A suggestion can contain at most 4 test details"),
+  breakingChanges: z
+    .array(singleLineText("Breaking change", 300))
+    .max(3, "A suggestion can contain at most 3 breaking changes"),
   explanation: singleLineText("Explanation", 300),
   confidence: z.number().min(0).max(1),
 });
 
-export const commitAnalysisSchema = z.strictObject({
-  summary: singleLineText("Summary", 500),
-  splitRecommended: z.boolean(),
-  splitReason: singleLineText("Split reason", 500).optional(),
-  suggestions: z.array(commitSuggestionSchema).min(1).max(3),
-});
+export const commitAnalysisSchema = z
+  .strictObject({
+    summary: singleLineText("Summary", 500),
+    splitRecommended: z.boolean(),
+    splitReason: singleLineText("Split reason", 500).optional(),
+    recommendedSuggestionIndex: z.number().int().min(0).max(2),
+    suggestions: z.array(commitSuggestionSchema).min(1).max(3),
+  })
+  .superRefine((analysis, context) => {
+    if (analysis.recommendedSuggestionIndex >= analysis.suggestions.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["recommendedSuggestionIndex"],
+        message: "Recommended suggestion index must reference a suggestion",
+      });
+    }
+  });
 
 export type CommitSuggestion = z.infer<typeof commitSuggestionSchema>;
 export type CommitAnalysis = z.infer<typeof commitAnalysisSchema>;

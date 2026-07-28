@@ -84,17 +84,19 @@ interface CommitAnalysisProvider {
 The contract contains no Ollama, OpenAI, Gemini, HTTP, or SDK types. The CLI
 knows only how to resolve a provider and call `analyze`.
 
-Phase 3 registers two provider identifiers, `mock` and `ollama`.
-`MockCommitAnalysisProvider` derives a fixed set of deterministic suggestions
-from staged file metadata and statistics. It performs no filesystem,
-environment-variable, model, or network I/O. Its suggestions prove the review
-flow; they are not semantic claims from an LLM.
+The registry exposes `ollama` and `gemini` provider identifiers.
 
 `OllamaProvider` resolves CLI overrides, environment variables, and defaults;
 enforces the diff-size limit; reports sensitive-filename warnings; calls
 `POST /api/generate` with native `fetch`; maps transport and provider failures;
 parses the response; and validates the model JSON with the shared Zod schema.
 The CLI validates the returned object a second time at the application boundary.
+
+`GeminiProvider` resolves API-key, model, and timeout configuration; emits a
+cloud-data disclosure; enforces the same diff-size limit; calls Gemini's
+`generateContent` endpoint with native `fetch`; requests structured JSON; maps
+provider failures without reflecting remote response bodies; and validates the
+result with the shared Zod schema.
 
 The provider sets a neutral optional `progressMessage` property. This lets the
 CLI show progress without a provider identifier branch and keeps JSON mode
@@ -123,6 +125,8 @@ The shared Zod schema requires:
 - A non-empty, single-line summary.
 - A boolean split recommendation.
 - An optional, non-empty split reason.
+- A zero-based recommended-suggestion index that references an available
+  suggestion.
 - Between one and three commit suggestions.
 
 Each suggestion requires:
@@ -130,6 +134,8 @@ Each suggestion requires:
 - One supported Conventional Commit type.
 - An optional normalized scope.
 - A non-empty, single-line description.
+- Between one and six bounded implementation details.
+- Bounded arrays for test details and breaking changes, which may be empty.
 - A non-empty, single-line explanation.
 - A finite confidence score between 0 and 1, inclusive.
 
@@ -139,16 +145,25 @@ single-line.
 
 ### UI layer
 
-The suggestion view formats Conventional Commit messages as:
+The suggestion view formats complete Conventional Commit messages as:
 
 ```text
-type: description
 type(scope): description
+
+- First meaningful implementation detail.
+- Second meaningful implementation detail.
+
+Tests:
+- Relevant staged test change.
+
+BREAKING CHANGE: Incompatible behavior demonstrated by the staged diff.
 ```
 
 Interactive output displays the summary, a split warning when requested by the
-validated response, each suggestion's explanation and confidence, and a choice
-for a custom non-empty message. Selection only prints the exact message.
+validated response, and a compact subject-only choice list with the recommended
+suggestion first. Details are shown only for the selected suggestion. The
+developer can accept the exact preview, return to the choices, or enter a
+custom non-empty message.
 
 JSON output serializes the complete validated provider response. It bypasses all
 prompt functions and writes no headings or progress messages to standard
@@ -163,6 +178,12 @@ The registry owns the supported provider identifiers and adapter construction:
     -> provider registry
     -> OllamaProvider
     -> native fetch to configured /api/generate
+    -> common provider interface
+
+--provider gemini [neutral overrides]
+    -> provider registry
+    -> GeminiProvider
+    -> native fetch to Gemini generateContent
     -> common provider interface
 ```
 
@@ -180,7 +201,7 @@ Validated staged changes
     -> CommitAnalysisProvider
         -> Ollama adapter (Phase 3)
         -> OpenAI adapter (future Phase 4)
-        -> Gemini adapter (future Phase 4)
+        -> Gemini adapter
     -> shared Zod validation
     -> shared output and selection
 ```
@@ -190,25 +211,26 @@ format and translate the result back into `CommitAnalysis`. Provider-specific
 configuration, authentication, HTTP clients, SDK types, timeouts, and errors
 must remain inside that adapter.
 
-Before Ollama receives staged content, Phase 3 enforces a 100,000-character diff
-limit without truncation, warns for sensitive-looking filenames, and clearly
-delimits untrusted content. The response is requested using a JSON Schema and
-remains untrusted until Zod validation succeeds.
+Before a provider receives staged content, Git Intent enforces a
+100,000-character diff limit without truncation, warns for sensitive-looking
+filenames, and clearly delimits untrusted content. Gemini additionally emits a
+cloud disclosure. Responses are requested using a JSON Schema and remain
+untrusted until Zod validation succeeds.
 
 ## Safety invariants
 
 - Git inspection is read-only.
 - An empty staged snapshot stops before provider resolution.
-- An oversized diff stops before an Ollama request.
+- An oversized diff stops before a provider request.
 - Sensitive-looking staged filenames produce a warning.
 - Provider output never bypasses runtime validation.
 - JSON mode never invokes interactive prompts.
 - JSON mode never prints progress to standard output.
 - Selecting or entering a message never invokes Git.
-- No code reads cloud API keys.
-- Only the Ollama provider makes an HTTP request, using native `fetch`.
+- Only the Gemini adapter reads Gemini API-key environment variables.
+- Provider adapters make HTTP requests using native `fetch`.
 - Known Ollama cloud model names and direct `ollama.com` endpoints are rejected.
-- No OpenAI or Gemini dependency or adapter is present.
+- API keys are sent in headers and omitted from request URLs and diagnostics.
 - The current index and commit history remain unchanged by inspection and
   suggestion commands.
 
@@ -216,12 +238,12 @@ remains untrusted until Zod validation succeeds.
 
 Phase 3 intentionally does not implement:
 
-- OpenAI or Gemini.
+- OpenAI.
 - Content redaction or guaranteed secret detection.
 - Mixed-change detection.
 - Automatic splitting or staging changes.
 - Commit confirmation or `git commit`.
-- Automatic retries, cloud credentials, or provider fallback.
+- Automatic retries or provider fallback.
 
 Those concerns require their own phases and must preserve the provider and
 safety boundaries above.

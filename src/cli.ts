@@ -18,6 +18,7 @@ import {
   validateStagedChangeAnalysis,
   type ValidatedStagedChangeAnalysis,
 } from "./analysis/analysis-schema.js";
+import { loadProjectEnvironment } from "./config/environment.js";
 import { GitService } from "./git/git-service.js";
 import type { StagedChangeAnalysis } from "./git/git-types.js";
 import type { CommitAnalysisProvider } from "./providers/commit-analysis-provider.js";
@@ -25,6 +26,7 @@ import {
   createProvider,
   listProviderModels,
   providerIds,
+  providerPresentation,
   type ProviderConfigurationOverrides,
   type ProviderId,
 } from "./providers/provider-registry.js";
@@ -32,6 +34,8 @@ import { formatFullDiff, formatInspection } from "./ui/inspection-view.js";
 import {
   formatCommitAnalysis,
   formatConventionalCommitMessage,
+  formatConventionalCommitSubject,
+  formatCommitSuggestionPreview,
 } from "./ui/suggestion-view.js";
 
 interface InspectOptions {
@@ -45,6 +49,7 @@ interface SuggestOptions {
   ollamaUrl?: string;
   model?: string;
   ollamaTimeout?: number;
+  geminiTimeout?: number;
 }
 
 interface SelectChoice {
@@ -101,6 +106,7 @@ function parsePositiveInteger(value: string): number {
 
 function providerConfigurationOverrides(
   options: SuggestOptions,
+  providerId: ProviderId,
 ): ProviderConfigurationOverrides | undefined {
   const overrides: ProviderConfigurationOverrides = {};
 
@@ -110,8 +116,11 @@ function providerConfigurationOverrides(
   if (options.model !== undefined) {
     overrides.model = options.model;
   }
-  if (options.ollamaTimeout !== undefined) {
+  if (providerId === "ollama" && options.ollamaTimeout !== undefined) {
     overrides.timeoutMs = options.ollamaTimeout;
+  }
+  if (providerId === "gemini" && options.geminiTimeout !== undefined) {
+    overrides.timeoutMs = options.geminiTimeout;
   }
 
   return Object.keys(overrides).length === 0 ? undefined : overrides;
@@ -119,13 +128,6 @@ function providerConfigurationOverrides(
 
 function isProviderId(value: string): value is ProviderId {
   return providerIds.some((providerId) => providerId === value);
-}
-
-function providerDisplayName(providerId: ProviderId): string {
-  switch (providerId) {
-    case "ollama":
-      return "Ollama (local)";
-  }
 }
 
 interface SelectedProvider {
@@ -145,9 +147,9 @@ async function selectProviderConfiguration(
       const selection = await dependencies.select({
         message: "Select a commit-analysis provider:",
         choices: providerIds.map((id) => ({
-          name: providerDisplayName(id),
+          name: providerPresentation(id).displayName,
           value: id,
-          description: "Run an installed model through your Ollama server.",
+          description: providerPresentation(id).description,
         })),
       });
       if (!isProviderId(selection)) {
@@ -157,15 +159,20 @@ async function selectProviderConfiguration(
     }
   }
 
-  let configuration = providerConfigurationOverrides(options);
-  if (options.json !== true && options.model === undefined) {
-    dependencies.writeOutput("Loading installed Ollama models...\n");
+  let configuration = providerConfigurationOverrides(options, providerId);
+  const modelSelection = providerPresentation(providerId).modelSelection;
+  if (
+    options.json !== true &&
+    options.model === undefined &&
+    modelSelection !== undefined
+  ) {
+    dependencies.writeOutput(`${modelSelection.loadingMessage}\n`);
     const installedModels = await dependencies.listProviderModels(
       providerId,
       configuration,
     );
     const selectedModel = await dependencies.select({
-      message: "Select an installed Ollama model:",
+      message: modelSelection.promptMessage,
       choices: installedModels.map((model) => ({
         name: model,
         value: model,
@@ -227,40 +234,58 @@ async function displaySuggestionSelection(
 ): Promise<void> {
   dependencies.writeOutput(`${formatCommitAnalysis(analysis)}\n`);
 
-  const choices: SelectChoice[] = analysis.suggestions.map(
-    (suggestion, index) => ({
-      name: formatConventionalCommitMessage(suggestion),
+  const suggestionIndexes = analysis.suggestions.map((_, index) => index);
+  suggestionIndexes.sort((left, right) => {
+    if (left === analysis.recommendedSuggestionIndex) {
+      return -1;
+    }
+    if (right === analysis.recommendedSuggestionIndex) {
+      return 1;
+    }
+    return left - right;
+  });
+
+  const choices: SelectChoice[] = suggestionIndexes.map((index) => {
+    const suggestion = analysis.suggestions[index]!;
+    const recommended = index === analysis.recommendedSuggestionIndex;
+    return {
+      name: `${
+        recommended ? "★ Recommended  " : "  Alternative  "
+      }${formatConventionalCommitSubject(suggestion)}`,
       value: `suggestion:${index}`,
-      description: `${suggestion.explanation} (${Math.round(
-        suggestion.confidence * 100,
-      )}% confidence)`,
-    }),
-  );
+      description: `${Math.round(suggestion.confidence * 100)}% confidence`,
+    };
+  });
   choices.push({
     name: "Enter a custom message",
     value: "custom",
     description: "Type a commit message without creating a commit.",
   });
 
-  const selection = await dependencies.select({
-    message: "Select a commit message:",
-    choices,
-  });
+  while (true) {
+    const selection = await dependencies.select({
+      message: "Choose a commit message to preview:",
+      choices,
+    });
 
-  let selectedMessage: string;
-  if (selection === "custom") {
-    selectedMessage = (
-      await dependencies.input({
-        message: "Custom commit message:",
-        validate: (value) =>
-          value.trim().length > 0 || "Commit message cannot be empty.",
-      })
-    ).trim();
+    if (selection === "custom") {
+      const selectedMessage = (
+        await dependencies.input({
+          message: "Custom commit message:",
+          validate: (value) =>
+            value.trim().length > 0 || "Commit message cannot be empty.",
+        })
+      ).trim();
 
-    if (selectedMessage.length === 0) {
-      throw new Error("Custom commit message cannot be empty.");
+      if (selectedMessage.length === 0) {
+        throw new Error("Custom commit message cannot be empty.");
+      }
+      dependencies.writeOutput(
+        `Selected commit message:\n${selectedMessage}\n`,
+      );
+      return;
     }
-  } else {
+
     const selectedIndex = Number.parseInt(
       selection.replace("suggestion:", ""),
       10,
@@ -269,10 +294,28 @@ async function displaySuggestionSelection(
     if (suggestion === undefined) {
       throw new Error("The selected commit suggestion is not available.");
     }
-    selectedMessage = formatConventionalCommitMessage(suggestion);
-  }
 
-  dependencies.writeOutput(`Selected commit message:\n${selectedMessage}\n`);
+    dependencies.writeOutput(
+      `\n${formatCommitSuggestionPreview(
+        suggestion,
+        selectedIndex === analysis.recommendedSuggestionIndex,
+      )}\n`,
+    );
+    const useSuggestion = await dependencies.confirm({
+      message: "Use this commit message?",
+      default: true,
+    });
+    if (useSuggestion) {
+      dependencies.writeOutput(
+        `Selected commit message:\n${formatConventionalCommitMessage(
+          suggestion,
+        )}\n`,
+      );
+      return;
+    }
+
+    dependencies.writeOutput("\nChoose another suggestion.\n");
+  }
 }
 
 function reportActionError(
@@ -361,8 +404,8 @@ export function createProgram(
     .addOption(
       new Option(
         "--model <model>",
-        "override the Ollama model name",
-      ).implies({ provider: "ollama" }),
+        "override the provider model name",
+      ),
     )
     .addOption(
       new Option(
@@ -371,6 +414,14 @@ export function createProgram(
       )
         .argParser(parsePositiveInteger)
         .implies({ provider: "ollama" }),
+    )
+    .addOption(
+      new Option(
+        "--gemini-timeout <milliseconds>",
+        "override the Gemini request timeout",
+      )
+        .argParser(parsePositiveInteger)
+        .implies({ provider: "gemini" }),
     )
     .action(async (options: SuggestOptions) => {
       try {
@@ -427,6 +478,7 @@ export function createProgram(
 }
 
 export async function runCli(argv = process.argv): Promise<void> {
+  loadProjectEnvironment();
   await createProgram().parseAsync(argv);
 }
 
