@@ -39,7 +39,7 @@ The exact runtime contents of a published package will depend on the future buil
 External tools are programs installed on the computer, not packages imported into this project.
 
 - **Git** is required because the CLI reads Git's staged changes and eventually invokes `git commit`. Installing an npm package does not install Git.
-- **Ollama** is optional until the local-provider phase. It runs as a separate local service, manages local models, and exposes an HTTP API. Installing the CLI will not automatically install a model or the Ollama service.
+- **Ollama** is optional for the Phase 3 local provider. It runs as a separate local service, manages local models, and exposes an HTTP API. Installing the CLI will not automatically install a model or the Ollama service.
 - **Node.js** is the runtime that executes the CLI. It is installed independently and includes npm in normal Node.js installations.
 
 An npm dependency can communicate with an external tool, but it does not replace that tool. For example, `execa` can start the `git` executable, but Git itself must already be installed.
@@ -84,7 +84,8 @@ The status labels used below mean:
 
 **Problem it solves:** TypeScript checks types before release. It makes contracts between layers explicit and catches mistakes such as passing an unvalidated provider response to the commit layer.
 
-**Where it will be used:** It will describe CLI options, Git results, sanitized model requests, provider contracts, validated suggestions, and test fixtures.
+**Where it will be used:** It describes CLI options, Git results, bounded model
+requests, provider contracts, validated suggestions, and test fixtures.
 
 **Conceptual example:** A provider result can be described as a collection of commit-message candidates. Type checking can reject code that treats that collection as a single string.
 
@@ -182,7 +183,9 @@ The status labels used below mean:
 
 **Problem it solves:** Vitest discovers tests, supplies assertions and mocks, reports failures, and supports TypeScript-oriented development workflows.
 
-**Where it will be used:** For unit tests of parsing, Git-output interpretation, secret filtering, validation, prompt construction, and provider adapters, plus selected integration tests.
+**Where it will be used:** For unit tests of parsing, Git-output interpretation,
+sensitive-filename detection, validation, prompt construction, and provider
+adapters, plus selected integration tests.
 
 **Conceptual example:** A test supplies a staged diff fixture containing renamed files and verifies that the Git layer returns the expected normalized representation without running a real commit.
 
@@ -238,15 +241,21 @@ The status labels used below mean:
 
 **Problem it solves:** Ollama installs, manages, and runs language models locally. Its local HTTP API lets another program send prompts to a running model without sending the staged diff to a cloud service.
 
-**Where it will be used:** In Phase 3, an Ollama provider adapter will call the local service. The service, selected model, and model files remain outside this npm package.
+**Where it is used:** In Phase 3, the Ollama provider adapter calls the configured local service. The service, selected model, and model files remain outside this npm package.
 
-**Conceptual example:** The adapter sends a sanitized commit-suggestion request to a loopback HTTP address, receives model output, and passes that untrusted output to the validation layer.
+**Conceptual example:** The adapter sends a bounded, explicitly delimited
+commit-suggestion request to a loopback HTTP address, receives model output, and
+passes that untrusted output to the validation layer.
 
-**Status:** Optional external system tool required later for the Ollama provider. It is not an npm dependency.
+**Status:** Optional external system tool required now only when
+`--provider ollama` is selected. It is not an npm dependency.
 
 **Built-in Node.js alternative:** Node.js native `fetch` is sufficient for calling Ollama's HTTP API. There is no built-in alternative that runs the language model itself.
 
-**Why use the HTTP API instead of an npm client initially:** A small adapter can use the documented local protocol directly, avoiding an extra runtime dependency. Ollama is still required as the model host. The project can reconsider a client library if direct HTTP maintenance becomes costly.
+**Why use the HTTP API instead of an npm client:** The Phase 3 adapter uses the
+documented `/api/generate` protocol through Node.js `fetch`, avoiding an extra
+runtime dependency. Ollama is still required as the model host. The project can
+reconsider a client library if direct HTTP maintenance becomes costly.
 
 ## Dependency principles
 

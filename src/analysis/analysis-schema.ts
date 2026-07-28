@@ -22,6 +22,20 @@ export const stagedChangeAnalysisSchema = z
     files: z.array(stagedFileSchema).min(1),
     statistics: changeStatisticsSchema,
     diff: z.string(),
+    recentCommitMessages: z
+      .array(
+        z
+          .string()
+          .trim()
+          .min(1)
+          .max(500)
+          .refine(
+            (value) => !/[\u0000-\u001f\u007f]/u.test(value),
+            "Recent commit messages must not contain control characters",
+          ),
+      )
+      .max(10)
+      .optional(),
   })
   .superRefine((analysis, context) => {
     if (analysis.statistics.filesChanged !== analysis.files.length) {
@@ -51,4 +65,3 @@ export function validateStagedChangeAnalysis(
 ): ValidatedStagedChangeAnalysis {
   return stagedChangeAnalysisSchema.parse(input);
 }
-

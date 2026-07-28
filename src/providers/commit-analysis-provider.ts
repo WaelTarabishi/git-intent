@@ -7,5 +7,6 @@ export interface CommitAnalysisRequest {
 
 export interface CommitAnalysisProvider {
   readonly id: string;
+  readonly progressMessage?: string;
   analyze(request: CommitAnalysisRequest): Promise<CommitAnalysis>;
 }

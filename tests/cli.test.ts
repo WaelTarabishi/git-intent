@@ -40,6 +40,8 @@ const commitAnalysis = {
 
 afterEach(() => {
   process.exitCode = undefined;
+  vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
 });
 
 describe("CLI options", () => {
@@ -128,6 +130,135 @@ describe("suggest command", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(select).not.toHaveBeenCalled();
     expect(input).not.toHaveBeenCalled();
+  });
+
+  it("passes Ollama CLI overrides to provider resolution", async () => {
+    const resolveProvider = vi.fn((): CommitAnalysisProvider => ({
+      id: "ollama",
+      analyze: async () => commitAnalysis,
+    }));
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider,
+      writeOutput: () => undefined,
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--ollama-url",
+      "http://127.0.0.1:22434",
+      "--model",
+      "cli-coder:7b",
+      "--ollama-timeout",
+      "45000",
+      "--json",
+    ]);
+
+    expect(resolveProvider).toHaveBeenCalledWith("ollama", {
+      baseUrl: "http://127.0.0.1:22434",
+      model: "cli-coder:7b",
+      timeoutMs: 45_000,
+    });
+  });
+
+  it("does not print Ollama progress or prompt in JSON mode", async () => {
+    const output: string[] = [];
+    const select = vi.fn(async () => {
+      throw new Error("select must not be called");
+    });
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider: () => ({
+        id: "ollama",
+        progressMessage: "Analyzing staged changes with Ollama...",
+        analyze: async () => commitAnalysis,
+      }),
+      select,
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--json",
+    ]);
+
+    expect(JSON.parse(output.join(""))).toEqual(commitAnalysis);
+    expect(output.join("")).not.toContain("Analyzing staged changes");
+    expect(select).not.toHaveBeenCalled();
+  });
+
+  it("prints provider progress before interactive Ollama analysis", async () => {
+    const output: string[] = [];
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider: () => ({
+        id: "ollama",
+        progressMessage: "Analyzing staged changes with Ollama...",
+        analyze: async () => commitAnalysis,
+      }),
+      select: async () => "suggestion:0",
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+    ]);
+
+    expect(output.join("")).toMatch(
+      /^Analyzing staged changes with Ollama\.\.\.\nSummary:/u,
+    );
+  });
+
+  it("writes sensitive-file warnings to stderr without corrupting Ollama JSON output", async () => {
+    vi.stubEnv("GIT_INTENT_OLLAMA_URL", "http://localhost:11434");
+    vi.stubEnv("GIT_INTENT_OLLAMA_MODEL", "test-coder:7b");
+    vi.stubEnv("GIT_INTENT_OLLAMA_TIMEOUT_MS", "1000");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        new Response(
+          JSON.stringify({
+            response: JSON.stringify(commitAnalysis),
+          }),
+        ),
+      ),
+    );
+    const output: string[] = [];
+    const errors: string[] = [];
+
+    await createProgram({
+      inspectStagedChanges: async () => ({
+        ...stagedChanges,
+        files: [
+          {
+            path: ".env",
+            status: "modified",
+            binary: false,
+          },
+        ],
+      }),
+      writeOutput: (value) => output.push(value),
+      writeError: (value) => errors.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--json",
+    ]);
+
+    expect(JSON.parse(output.join(""))).toEqual(commitAnalysis);
+    expect(errors.join("")).toContain("Warning: Sensitive staged filenames");
   });
 
   it("lets the developer select a validated suggestion without committing", async () => {

@@ -77,6 +77,7 @@ describe("GitService integration", () => {
 
     expect(after).toEqual(before);
     expect(analysis.diff).toBe(before.index);
+    expect(analysis.recentCommitMessages).toContain("test: baseline");
     expect(analysis.files.map((file) => file.path)).not.toContain(
       "unstaged.txt",
     );

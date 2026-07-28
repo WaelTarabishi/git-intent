@@ -267,6 +267,27 @@ export class GitService {
     }
   }
 
+  private async readRecentCommitMessages(): Promise<string[]> {
+    try {
+      const output = await this.execute(
+        ["log", "-5", "--pretty=format:%s"],
+        "reading recent commit messages",
+      );
+      return output
+        .split(/\r?\n/u)
+        .map((message) => message.trim())
+        .filter(
+          (message) =>
+            message.length > 0 &&
+            message.length <= 500 &&
+            !/[\u0000-\u001f\u007f]/u.test(message),
+        );
+    } catch {
+      // A new repository has no HEAD, and history is optional model context.
+      return [];
+    }
+  }
+
   async inspectStagedChanges(): Promise<StagedChangeAnalysis> {
     await this.execute(["--version"], "checking whether Git is installed");
 
@@ -314,7 +335,7 @@ export class GitService {
       throw new NoStagedFilesError();
     }
 
-    const [diff, numstatOutput] = await Promise.all([
+    const [diff, numstatOutput, recentCommitMessages] = await Promise.all([
       this.execute(
         ["diff", "--cached", "--no-color", "--no-ext-diff", "--binary"],
         "reading the staged diff",
@@ -323,6 +344,7 @@ export class GitService {
         ["diff", "--cached", "--numstat", "-z", "--find-renames", "--no-ext-diff"],
         "reading staged statistics",
       ),
+      this.readRecentCommitMessages(),
     ]);
 
     const numstat = parseNumstat(numstatOutput);
@@ -336,7 +358,7 @@ export class GitService {
       binary: binaryPaths.has(file.path),
     }));
 
-    return {
+    const analysis: StagedChangeAnalysis = {
       repositoryRoot,
       files: filesWithBinaryState,
       statistics: {
@@ -353,6 +375,11 @@ export class GitService {
       },
       diff,
     };
+
+    if (recentCommitMessages.length > 0) {
+      analysis.recentCommitMessages = recentCommitMessages;
+    }
+
+    return analysis;
   }
 }
-

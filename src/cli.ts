@@ -5,7 +5,7 @@ import {
   input as inputPrompt,
   select as selectPrompt,
 } from "@inquirer/prompts";
-import { Command, Option } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -23,6 +23,7 @@ import type { CommitAnalysisProvider } from "./providers/commit-analysis-provide
 import {
   createProvider,
   providerIds,
+  type ProviderConfigurationOverrides,
   type ProviderId,
 } from "./providers/provider-registry.js";
 import { formatFullDiff, formatInspection } from "./ui/inspection-view.js";
@@ -39,6 +40,9 @@ interface InspectOptions {
 interface SuggestOptions {
   json?: boolean;
   provider: ProviderId;
+  ollamaUrl?: string;
+  model?: string;
+  ollamaTimeout?: number;
 }
 
 interface SelectChoice {
@@ -49,7 +53,10 @@ interface SelectChoice {
 
 export interface CliDependencies {
   inspectStagedChanges(): Promise<StagedChangeAnalysis>;
-  resolveProvider(providerId: ProviderId): CommitAnalysisProvider;
+  resolveProvider(
+    providerId: ProviderId,
+    options?: ProviderConfigurationOverrides,
+  ): CommitAnalysisProvider;
   confirm(options: { message: string; default?: boolean }): Promise<boolean>;
   select(options: {
     message: string;
@@ -76,6 +83,32 @@ const defaultDependencies: CliDependencies = {
     process.exitCode = value;
   },
 };
+
+function parsePositiveInteger(value: string): number {
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) {
+    throw new InvalidArgumentError("Value must be a positive integer.");
+  }
+  return parsed;
+}
+
+function providerConfigurationOverrides(
+  options: SuggestOptions,
+): ProviderConfigurationOverrides | undefined {
+  const overrides: ProviderConfigurationOverrides = {};
+
+  if (options.ollamaUrl !== undefined) {
+    overrides.baseUrl = options.ollamaUrl;
+  }
+  if (options.model !== undefined) {
+    overrides.model = options.model;
+  }
+  if (options.ollamaTimeout !== undefined) {
+    overrides.timeoutMs = options.ollamaTimeout;
+  }
+
+  return Object.keys(overrides).length === 0 ? undefined : overrides;
+}
 
 function isPromptCancellation(error: unknown): boolean {
   return (
@@ -187,6 +220,14 @@ export function createProgram(
   dependencyOverrides: Partial<CliDependencies> = {},
 ): Command {
   const dependencies = { ...defaultDependencies, ...dependencyOverrides };
+  if (dependencyOverrides.resolveProvider === undefined) {
+    dependencies.resolveProvider = (providerId, options) =>
+      createProvider(providerId, {
+        ...options,
+        onWarning: (message) =>
+          dependencies.writeError(`Warning: ${message}\n`),
+      });
+  }
   const program = new Command();
 
   program
@@ -236,6 +277,26 @@ export function createProgram(
         .choices([...providerIds])
         .default("mock"),
     )
+    .addOption(
+      new Option(
+        "--ollama-url <url>",
+        "override the Ollama base URL",
+      ).implies({ provider: "ollama" }),
+    )
+    .addOption(
+      new Option(
+        "--model <model>",
+        "override the Ollama model name",
+      ).implies({ provider: "ollama" }),
+    )
+    .addOption(
+      new Option(
+        "--ollama-timeout <milliseconds>",
+        "override the Ollama request timeout",
+      )
+        .argParser(parsePositiveInteger)
+        .implies({ provider: "ollama" }),
+    )
     .action(async (options: SuggestOptions) => {
       try {
         const unvalidatedStagedChanges =
@@ -243,7 +304,23 @@ export function createProgram(
         const stagedChanges = validateStagedChangeAnalysis(
           unvalidatedStagedChanges,
         );
-        const provider = dependencies.resolveProvider(options.provider);
+        const configurationOverrides =
+          providerConfigurationOverrides(options);
+        const provider =
+          configurationOverrides === undefined
+            ? dependencies.resolveProvider(options.provider)
+            : dependencies.resolveProvider(
+                options.provider,
+                configurationOverrides,
+              );
+
+        if (
+          options.json !== true &&
+          provider.progressMessage !== undefined
+        ) {
+          dependencies.writeOutput(`${provider.progressMessage}\n`);
+        }
+
         const unvalidatedCommitAnalysis = await provider.analyze({
           stagedChanges,
         });

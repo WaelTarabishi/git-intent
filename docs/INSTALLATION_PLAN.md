@@ -1,6 +1,7 @@
 # Installation Plan
 
-This file records proposed commands only. Do not execute them during the architecture stage.
+This file records the dependency rationale and installation sequence through
+Phase 3.
 
 ## Computer prerequisites
 
@@ -10,7 +11,9 @@ The initial development environment needs:
 - Git, available on the command path.
 - A terminal capable of running the CLI and interactive prompts in later phases.
 
-Ollama is not required for Phases 1 or 2. It becomes an optional external prerequisite when the developer chooses the local-provider work in Phase 3.
+Ollama is an optional external prerequisite when the developer chooses the
+local provider in Phase 3. It is not required for inspection or the mock
+provider.
 
 OpenAI and Gemini accounts or API keys are not required until their opt-in adapters are developed in Phase 4.
 
@@ -76,7 +79,9 @@ The project should document separately how to:
 - Confirm the configured model exists.
 - Override the local endpoint safely.
 
-Those steps belong to Phase 3 and are not performed now.
+Phase 3 documents those steps in [OLLAMA.md](OLLAMA.md). The implemented default
+model is `qwen2.5-coder:7b`, and Git Intent uses native `fetch` rather than an
+Ollama npm dependency.
 
 ### Phase 4: OpenAI
 

@@ -30,6 +30,7 @@ export interface StagedChangeAnalysis {
   files: StagedFile[];
   statistics: ChangeStatistics;
   diff: string;
+  recentCommitMessages?: string[];
 }
 
 export interface GitCommandResult {
@@ -41,4 +42,3 @@ export type GitCommandRunner = (
   args: readonly string[],
   cwd: string,
 ) => Promise<GitCommandResult>;
-

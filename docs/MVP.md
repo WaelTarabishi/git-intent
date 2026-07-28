@@ -92,6 +92,9 @@ Prove the complete provider-independent review flow using deterministic fake dat
 
 ## Phase 3: Ollama integration
 
+**Status:** Implemented and verified in the current Phase 3 codebase. OpenAI,
+Gemini, automatic commits, and Phase 4 work remain excluded.
+
 ### Goal
 
 Generate real suggestions through a locally running model while keeping the same validation and human-review workflow.
@@ -103,7 +106,7 @@ Generate real suggestions through a locally running model while keeping the same
 - Availability and model checks with actionable errors.
 - Timeouts and cancellation.
 - Provider-neutral prompt construction with clear diff delimiters.
-- Secret filtering and diff-size limits before the provider call.
+- Sensitive-filename warnings and a diff-size limit before the provider call.
 - Shared structured-result validation and interactive review.
 
 ### Intentionally excluded
@@ -119,7 +122,8 @@ Generate real suggestions through a locally running model while keeping the same
 
 - The Ollama adapter can replace the mock adapter without changing the CLI, Git, validation, or review contracts.
 - A missing service or model produces a helpful error and no Git mutation.
-- Only sanitized and bounded content reaches the local HTTP request.
+- Only bounded content reaches the local HTTP request, with sensitive-looking
+  filenames disclosed as warnings.
 - Invalid model output is rejected or handled through an explicit retry policy.
 - The developer always sees and confirms the exact selected suggestion before any future commit action.
 - Tests do not require every contributor or CI job to have a model installed.
@@ -129,7 +133,8 @@ Generate real suggestions through a locally running model while keeping the same
 - Provider contract tests for the Ollama adapter with a fake local HTTP server.
 - Tests for success, timeout, cancellation, unavailable service, missing model, malformed response, and non-success HTTP status.
 - Prompt tests proving staged content is delimited as untrusted data.
-- Security tests for representative token, private-key, credential-file, and high-entropy secret patterns.
+- Security tests for representative environment, private-key, credential,
+  Terraform state, and secret-manifest filenames.
 - Size-limit and binary-file tests.
 - An optional, separately marked manual or integration test against a real local Ollama service.
 
