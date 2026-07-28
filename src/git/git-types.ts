@@ -38,6 +38,12 @@ export interface GitCommandResult {
   stderr?: string;
 }
 
+export interface GitPushContext {
+  branch: string;
+  upstream?: string;
+  remotes: string[];
+}
+
 export type GitCommandRunner = (
   args: readonly string[],
   cwd: string,

@@ -30,13 +30,12 @@ describe("formatInspection", () => {
 
     expect(formatInspection(analysis)).toBe(
       [
-        "Staged changes (2 files):",
+        "◆ Staged changes · 2 files",
         "  M src/cli.ts",
         "  A assets/logo.png (binary)",
         "",
-        "Statistics: 2 files changed, 10 insertions(+), 1 deletion(-), 1 binary file",
+        "Σ Statistics · 2 files changed · +10 insertions · -1 deletion · 1 binary file",
       ].join("\n"),
     );
   });
 });
-

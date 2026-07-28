@@ -1,8 +1,9 @@
 # Git Intent
 
-Git Intent is a read-only staged-change inspection and commit-analysis CLI.
-It generates structured suggestions with either a locally running Ollama model
-or Google Gemini. It never stages files, creates commits, or pushes.
+Git Intent inspects staged changes and generates structured commit suggestions
+with either a locally running Ollama model or Google Gemini. Interactive
+generation creates the chosen commit locally, then separately asks whether to
+push it. Inspection and JSON analysis remain read-only.
 
 ## Requirements and installation
 
@@ -30,6 +31,32 @@ npm run build
 npm test
 ```
 
+## Terminal themes
+
+Interactive output uses a colorful semantic theme for headings, file statuses,
+statistics, recommendations, confidence, warnings, errors, commits, and pushes.
+The default `aurora` palette is the most vibrant. Choose a palette independently
+for either command:
+
+```sh
+git-intent inspect --theme aurora
+git-intent suggest --theme sunset
+git-intent suggest --theme ocean
+git-intent inspect --theme mono
+```
+
+Available themes are `aurora`, `sunset`, `ocean`, and `mono`. Disable ANSI
+styling explicitly with `--no-color`:
+
+```sh
+git-intent inspect --no-color
+git-intent suggest --no-color
+```
+
+Colors are also suppressed automatically when the output stream does not
+support them or when `NO_COLOR` is set. JSON output remains valid JSON and does
+not contain terminal styling.
+
 ## Inspect staged changes
 
 Inspect staged filenames and statistics, then choose whether to display the
@@ -51,7 +78,7 @@ Print the validated staged-change analysis as JSON without prompting:
 git-intent inspect --json
 ```
 
-## Review commit suggestions
+## Create and optionally push a suggested commit
 
 Pull at least one Ollama model, stage your changes, and start the interactive
 flow:
@@ -73,8 +100,10 @@ three commit subjects. The provider's recommended suggestion appears first.
 Only the chosen suggestion expands into a detailed preview with its
 implementation details, test changes, breaking changes, explanation, and
 confidence. The developer can accept the preview, return to the compact list,
-or enter a custom message. Git Intent only prints the selected message; it
-never runs `git commit`.
+or enter a custom message. Accepting a message creates a local commit from the
+currently staged changes. Git Intent then asks separately whether to push,
+defaulting to No. A branch without an upstream can be pushed to a selected
+configured remote and have that upstream established.
 
 For automation or inspection, return only the complete validated provider
 response:
@@ -86,8 +115,9 @@ git-intent generate \
   --json
 ```
 
-JSON mode never opens an interactive prompt. Errors are written to standard
-error, so successful standard output is one valid JSON document.
+JSON mode never opens an interactive prompt, creates a commit, or pushes.
+Errors are written to standard error, so successful standard output is one
+valid JSON document.
 
 Only changes already staged in Git are inspected. Unstaged and untracked files
 are not included. An empty staging area is rejected before a provider is called.

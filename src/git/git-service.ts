@@ -2,6 +2,7 @@ import { execa } from "execa";
 
 import type {
   GitCommandRunner,
+  GitPushContext,
   StagedChangeAnalysis,
   StagedFile,
   StagedFileStatus,
@@ -33,6 +34,15 @@ export class NoStagedFilesError extends Error {
   constructor() {
     super("No staged files found. Stage changes with `git add` and try again.");
     this.name = "NoStagedFilesError";
+  }
+}
+
+export class DetachedHeadError extends Error {
+  constructor() {
+    super(
+      "The commit was created locally, but HEAD is detached. Check out a branch before pushing.",
+    );
+    this.name = "DetachedHeadError";
   }
 }
 
@@ -381,5 +391,90 @@ export class GitService {
     }
 
     return analysis;
+  }
+
+  async createCommit(message: string): Promise<string> {
+    const normalizedMessage = message.trim();
+    if (normalizedMessage.length === 0) {
+      throw new Error("Commit message cannot be empty.");
+    }
+    if (normalizedMessage.includes("\0")) {
+      throw new Error("Commit message cannot contain a null character.");
+    }
+
+    await this.execute(
+      ["commit", "--message", normalizedMessage],
+      "creating the commit",
+    );
+    return (
+      await this.execute(
+        ["rev-parse", "--short", "HEAD"],
+        "reading the created commit",
+      )
+    ).trim();
+  }
+
+  async getPushContext(): Promise<GitPushContext> {
+    let branch: string;
+    try {
+      branch = (
+        await this.execute(
+          ["symbolic-ref", "--quiet", "--short", "HEAD"],
+          "reading the current branch",
+        )
+      ).trim();
+    } catch {
+      throw new DetachedHeadError();
+    }
+
+    let upstream: string | undefined;
+    try {
+      const value = (
+        await this.execute(
+          [
+            "rev-parse",
+            "--abbrev-ref",
+            "--symbolic-full-name",
+            "@{upstream}",
+          ],
+          "reading the configured upstream",
+        )
+      ).trim();
+      if (value.length > 0) {
+        upstream = value;
+      }
+    } catch {
+      // A branch without an upstream can still be pushed to a chosen remote.
+    }
+
+    const remotes = (
+      await this.execute(["remote"], "reading configured Git remotes")
+    )
+      .split(/\r?\n/u)
+      .map((remote) => remote.trim())
+      .filter((remote) => remote.length > 0);
+
+    return upstream === undefined
+      ? { branch, remotes }
+      : { branch, upstream, remotes };
+  }
+
+  async pushCurrentBranch(
+    context: GitPushContext,
+    remote?: string,
+  ): Promise<void> {
+    if (context.upstream !== undefined) {
+      await this.execute(["push"], "pushing the commit");
+      return;
+    }
+
+    if (remote === undefined || !context.remotes.includes(remote)) {
+      throw new Error("Select a configured Git remote before pushing.");
+    }
+
+    await this.execute(
+      ["push", "--set-upstream", "--", remote, context.branch],
+      "pushing the commit and configuring its upstream",
+    );
   }
 }

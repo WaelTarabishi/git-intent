@@ -66,7 +66,7 @@ describe("commit suggestion formatting", () => {
     });
 
     expect(output).toContain(
-      "Recommended: feat(cli): add detailed commit suggestions",
+      "★ Recommended · feat(cli): add detailed commit suggestions",
     );
     expect(output).not.toContain(detailedSuggestion.details[0]);
   });
@@ -77,5 +77,7 @@ describe("commit suggestion formatting", () => {
     expect(output).toContain("Recommended commit");
     expect(output).toContain(detailedSuggestion.details[0]);
     expect(output).toContain("Confidence: 94%");
+    expect(output).toContain("╭─ ★ Recommended commit");
+    expect(output).toContain("╰────────────────");
   });
 });

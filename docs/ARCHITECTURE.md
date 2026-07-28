@@ -1,9 +1,9 @@
 # Architecture
 
-## Phase 3 scope
+## Current scope
 
-Phase 3 preserves the complete read-only review path and adds opt-in local model
-analysis:
+Inspection and JSON analysis remain read-only. Interactive suggestion review
+has an explicit commit boundary followed by a separate optional push boundary:
 
 ```text
 Developer command
@@ -13,14 +13,14 @@ Developer command
     -> provider resolution
     -> provider-owned safety and analysis
     -> commit-analysis validation
-    -> JSON output or interactive selection
-    -> selected-message output
+    -> JSON output (stop, read-only)
+       or interactive selection
+    -> confirmed local commit
+    -> optional confirmed push
 ```
 
-There is no commit layer in this phase. No implemented path stages files,
-unstages files, creates a commit, pushes, contacts OpenAI or Gemini, or reads
-cloud API keys. The Ollama adapter can make one HTTP request to its explicitly
-configured endpoint.
+No path stages or unstages files automatically. Only an accepted interactive
+message creates a commit. Push is a separate choice that defaults to No.
 
 ## Layer boundaries
 
@@ -36,17 +36,19 @@ layers. It:
 - Displays a provider-declared progress message outside JSON mode.
 - Validates every provider result before display.
 - Chooses between JSON and interactive output.
+- Creates the selected commit after the review confirmation.
+- Resolves the branch and upstream before offering a separate push choice.
 - Reports errors to standard error.
 
-The CLI does not parse Git output, implement provider-specific protocols, or run
-`git commit`. It does not construct an Ollama request or parse an Ollama
-response. Its dependencies are injectable so provider-interface usage and
-non-interactive behavior can be tested without a real repository or terminal.
+The CLI does not parse Git output or implement provider-specific protocols. It
+does not construct provider requests or parse provider responses. Its
+dependencies are injectable so provider-interface and mutation behavior can be
+tested without a real repository, remote, or terminal.
 
 ### Git layer
 
-`GitService.inspectStagedChanges` remains the sole source of repository facts.
-It invokes only read operations:
+`GitService.inspectStagedChanges` remains the sole source of staged repository
+facts and invokes only read operations:
 
 - Verify that Git is installed and the current directory is a work tree.
 - Find the repository root.
@@ -56,8 +58,16 @@ It invokes only read operations:
 - Reject an empty staging area.
 
 It normalizes additions, modifications, deletions, renames, copies, type
-changes, unmerged entries, binary files, and unknown statuses. It does not call
-`git add`, `git reset`, `git restore`, or `git commit`.
+changes, unmerged entries, binary files, and unknown statuses.
+
+The mutation methods are separate from inspection:
+
+- `createCommit` passes the complete reviewed message to `git commit` without a
+  shell and reads the resulting short hash.
+- `getPushContext` resolves the current branch, configured upstream, and
+  remotes.
+- `pushCurrentBranch` uses the existing upstream or an explicitly selected
+  remote. A new upstream is configured only for a branch that did not have one.
 
 ### Staged-change validation
 
@@ -163,7 +173,8 @@ Interactive output displays the summary, a split warning when requested by the
 validated response, and a compact subject-only choice list with the recommended
 suggestion first. Details are shown only for the selected suggestion. The
 developer can accept the exact preview, return to the choices, or enter a
-custom non-empty message.
+custom non-empty message. Acceptance creates the local commit. Push is offered
+after creation in a separate prompt whose default is No.
 
 JSON output serializes the complete validated provider response. It bypasses all
 prompt functions and writes no headings or progress messages to standard
@@ -226,13 +237,17 @@ untrusted until Zod validation succeeds.
 - Provider output never bypasses runtime validation.
 - JSON mode never invokes interactive prompts.
 - JSON mode never prints progress to standard output.
-- Selecting or entering a message never invokes Git.
+- JSON mode never creates a commit or pushes.
+- A local commit is created only after a suggestion preview is accepted or a
+  custom message is submitted.
+- Push is never automatic and requires a separate explicit choice.
+- Push failure does not remove the local commit, and the error identifies its
+  hash.
 - Only the Gemini adapter reads Gemini API-key environment variables.
 - Provider adapters make HTTP requests using native `fetch`.
 - Known Ollama cloud model names and direct `ollama.com` endpoints are rejected.
 - API keys are sent in headers and omitted from request URLs and diagnostics.
-- The current index and commit history remain unchanged by inspection and
-  suggestion commands.
+- Inspection leaves the index, working tree, and history unchanged.
 
 ## Deferred work
 
@@ -242,7 +257,6 @@ Phase 3 intentionally does not implement:
 - Content redaction or guaranteed secret detection.
 - Mixed-change detection.
 - Automatic splitting or staging changes.
-- Commit confirmation or `git commit`.
 - Automatic retries or provider fallback.
 
 Those concerns require their own phases and must preserve the provider and

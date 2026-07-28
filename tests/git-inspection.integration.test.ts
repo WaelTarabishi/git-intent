@@ -112,4 +112,43 @@ describe("GitService integration", () => {
       new GitService(directory).inspectStagedChanges(),
     ).rejects.toBeInstanceOf(NotGitRepositoryError);
   });
+
+  it("creates a local commit and pushes a new branch to a selected remote", async () => {
+    const repository = await createTemporaryDirectory();
+    const remote = await createTemporaryDirectory();
+    await git(remote, ["init", "--bare"]);
+    await git(repository, ["init", "-b", "main"]);
+    await git(repository, ["config", "user.name", "Git Intent Test"]);
+    await git(repository, ["config", "user.email", "test@example.invalid"]);
+    await git(repository, ["remote", "add", "origin", remote]);
+    await writeFile(path.join(repository, "feature.txt"), "new feature\n");
+    await git(repository, ["add", "--", "feature.txt"]);
+
+    const service = new GitService(repository);
+    const message = [
+      "feat: add feature",
+      "",
+      "- Add the staged feature implementation.",
+    ].join("\n");
+    const hash = await service.createCommit(message);
+    const context = await service.getPushContext();
+
+    expect(context).toEqual({
+      branch: "main",
+      remotes: ["origin"],
+    });
+
+    await service.pushCurrentBranch(context, "origin");
+
+    expect(await git(repository, ["diff", "--cached"])).toBe("");
+    expect(
+      (await git(repository, ["log", "-1", "--pretty=%B"])).trimEnd(),
+    ).toBe(message);
+    expect(await git(remote, ["rev-parse", "refs/heads/main"])).toBe(
+      await git(repository, ["rev-parse", "HEAD"]),
+    );
+    expect(hash).toBe(
+      await git(repository, ["rev-parse", "--short", "HEAD"]),
+    );
+  }, 10_000);
 });

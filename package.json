@@ -1,7 +1,7 @@
 {
   "name": "smart-commit",
   "version": "0.1.0",
-  "description": "A read-only staged Git inspection and commit-analysis CLI.",
+  "description": "Generate detailed Git commits and optionally push them after review.",
   "type": "module",
   "bin": {
     "git-intent": "./dist/cli.js",

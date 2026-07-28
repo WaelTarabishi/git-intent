@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  DetachedHeadError,
   GitCommandError,
   GitNotInstalledError,
   GitService,
@@ -91,5 +92,98 @@ describe("GitService", () => {
       "--find-renames",
       "--no-ext-diff",
     ]);
+  });
+
+  it("creates a commit with the complete message and returns its short hash", async () => {
+    const runner = vi
+      .fn<GitCommandRunner>()
+      .mockResolvedValueOnce({ stdout: "[main abc1234] commit created" })
+      .mockResolvedValueOnce({ stdout: "abc1234" });
+    const service = new GitService("C:/repo", runner);
+    const message = "feat(cli): add commit workflow\n\n- Create the commit.";
+
+    await expect(service.createCommit(message)).resolves.toBe("abc1234");
+    expect(runner.mock.calls.map(([args]) => args)).toEqual([
+      ["commit", "--message", message],
+      ["rev-parse", "--short", "HEAD"],
+    ]);
+  });
+
+  it("reads the current branch, upstream, and configured remotes", async () => {
+    const runner = vi
+      .fn<GitCommandRunner>()
+      .mockResolvedValueOnce({ stdout: "main" })
+      .mockResolvedValueOnce({ stdout: "origin/main" })
+      .mockResolvedValueOnce({ stdout: "origin\nbackup" });
+
+    await expect(
+      new GitService("C:/repo", runner).getPushContext(),
+    ).resolves.toEqual({
+      branch: "main",
+      upstream: "origin/main",
+      remotes: ["origin", "backup"],
+    });
+  });
+
+  it("supports a branch without an upstream", async () => {
+    const runner = vi
+      .fn<GitCommandRunner>()
+      .mockResolvedValueOnce({ stdout: "feature/details" })
+      .mockRejectedValueOnce({ stderr: "fatal: no upstream configured" })
+      .mockResolvedValueOnce({ stdout: "origin" });
+
+    await expect(
+      new GitService("C:/repo", runner).getPushContext(),
+    ).resolves.toEqual({
+      branch: "feature/details",
+      remotes: ["origin"],
+    });
+  });
+
+  it("reports detached HEAD before offering a push", async () => {
+    const runner = vi
+      .fn<GitCommandRunner>()
+      .mockRejectedValueOnce({ stderr: "fatal: ref HEAD is not symbolic" });
+
+    await expect(
+      new GitService("C:/repo", runner).getPushContext(),
+    ).rejects.toBeInstanceOf(DetachedHeadError);
+  });
+
+  it("pushes to an upstream or configures a selected remote", async () => {
+    const upstreamRunner = vi
+      .fn<GitCommandRunner>()
+      .mockResolvedValue({ stdout: "" });
+    const upstreamContext = {
+      branch: "main",
+      upstream: "origin/main",
+      remotes: ["origin"],
+    };
+    await new GitService("C:/repo", upstreamRunner).pushCurrentBranch(
+      upstreamContext,
+    );
+    expect(upstreamRunner).toHaveBeenCalledWith(["push"], "C:/repo");
+
+    const newBranchRunner = vi
+      .fn<GitCommandRunner>()
+      .mockResolvedValue({ stdout: "" });
+    const newBranchContext = {
+      branch: "feature/details",
+      remotes: ["origin"],
+    };
+    await new GitService("C:/repo", newBranchRunner).pushCurrentBranch(
+      newBranchContext,
+      "origin",
+    );
+    expect(newBranchRunner).toHaveBeenCalledWith(
+      [
+        "push",
+        "--set-upstream",
+        "--",
+        "origin",
+        "feature/details",
+      ],
+      "C:/repo",
+    );
   });
 });

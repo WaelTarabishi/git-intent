@@ -19,8 +19,14 @@ import {
   type ValidatedStagedChangeAnalysis,
 } from "./analysis/analysis-schema.js";
 import { loadProjectEnvironment } from "./config/environment.js";
-import { GitService } from "./git/git-service.js";
-import type { StagedChangeAnalysis } from "./git/git-types.js";
+import {
+  DetachedHeadError,
+  GitService,
+} from "./git/git-service.js";
+import type {
+  GitPushContext,
+  StagedChangeAnalysis,
+} from "./git/git-types.js";
 import type { CommitAnalysisProvider } from "./providers/commit-analysis-provider.js";
 import {
   createProvider,
@@ -34,13 +40,22 @@ import { formatFullDiff, formatInspection } from "./ui/inspection-view.js";
 import {
   formatCommitAnalysis,
   formatConventionalCommitMessage,
-  formatConventionalCommitSubject,
   formatCommitSuggestionPreview,
+  formatStyledConventionalCommitSubject,
 } from "./ui/suggestion-view.js";
+import {
+  createTheme,
+  defaultThemeName,
+  themeNames,
+  type TerminalTheme,
+  type ThemeName,
+} from "./ui/theme.js";
 
 interface InspectOptions {
   json?: boolean;
   showDiff?: boolean;
+  theme?: ThemeName;
+  color?: boolean;
 }
 
 interface SuggestOptions {
@@ -50,6 +65,8 @@ interface SuggestOptions {
   model?: string;
   ollamaTimeout?: number;
   geminiTimeout?: number;
+  theme?: ThemeName;
+  color?: boolean;
 }
 
 interface SelectChoice {
@@ -68,6 +85,12 @@ export interface CliDependencies {
     providerId: ProviderId,
     options?: ProviderConfigurationOverrides,
   ): Promise<readonly string[]>;
+  createCommit(message: string): Promise<string>;
+  getPushContext(): Promise<GitPushContext>;
+  pushCurrentBranch(
+    context: GitPushContext,
+    remote?: string,
+  ): Promise<void>;
   confirm(options: { message: string; default?: boolean }): Promise<boolean>;
   select(options: {
     message: string;
@@ -86,6 +109,10 @@ const defaultDependencies: CliDependencies = {
   inspectStagedChanges: async () => new GitService().inspectStagedChanges(),
   resolveProvider: createProvider,
   listProviderModels,
+  createCommit: async (message) => new GitService().createCommit(message),
+  getPushContext: async () => new GitService().getPushContext(),
+  pushCurrentBranch: async (context, remote) =>
+    new GitService().pushCurrentBranch(context, remote),
   confirm: async (options) => confirmPrompt(options),
   select: async (options) => selectPrompt(options),
   input: async (options) => inputPrompt(options),
@@ -95,6 +122,26 @@ const defaultDependencies: CliDependencies = {
     process.exitCode = value;
   },
 };
+
+function addAppearanceOptions(command: Command): Command {
+  return command
+    .addOption(
+      new Option("--theme <theme>", "terminal color theme")
+        .choices([...themeNames])
+        .default(defaultThemeName),
+    )
+    .option("--no-color", "disable ANSI colors and text styling");
+}
+
+function resolveTheme(
+  options: Pick<InspectOptions, "theme" | "color">,
+  stream: NodeJS.WritableStream = process.stdout,
+): TerminalTheme {
+  const name = options.theme ?? defaultThemeName;
+  return options.color === false
+    ? createTheme(name, { color: false, stream })
+    : createTheme(name, { stream });
+}
 
 function parsePositiveInteger(value: string): number {
   const parsed = Number(value);
@@ -204,6 +251,7 @@ function isPromptCancellation(error: unknown): boolean {
 async function displayInspection(
   analysis: ValidatedStagedChangeAnalysis,
   options: InspectOptions,
+  theme: TerminalTheme,
   dependencies: CliDependencies,
 ): Promise<void> {
   if (options.json === true) {
@@ -211,10 +259,10 @@ async function displayInspection(
     return;
   }
 
-  dependencies.writeOutput(`${formatInspection(analysis)}\n`);
+  dependencies.writeOutput(`${formatInspection(analysis, theme)}\n`);
 
   if (options.showDiff === true) {
-    dependencies.writeOutput(`${formatFullDiff(analysis.diff)}\n`);
+    dependencies.writeOutput(`${formatFullDiff(analysis.diff, theme)}\n`);
     return;
   }
 
@@ -224,15 +272,16 @@ async function displayInspection(
   });
 
   if (shouldShowDiff) {
-    dependencies.writeOutput(`${formatFullDiff(analysis.diff)}\n`);
+    dependencies.writeOutput(`${formatFullDiff(analysis.diff, theme)}\n`);
   }
 }
 
 async function displaySuggestionSelection(
   analysis: CommitAnalysis,
+  theme: TerminalTheme,
   dependencies: CliDependencies,
-): Promise<void> {
-  dependencies.writeOutput(`${formatCommitAnalysis(analysis)}\n`);
+): Promise<string> {
+  dependencies.writeOutput(`${formatCommitAnalysis(analysis, theme)}\n`);
 
   const suggestionIndexes = analysis.suggestions.map((_, index) => index);
   suggestionIndexes.sort((left, right) => {
@@ -250,16 +299,21 @@ async function displaySuggestionSelection(
     const recommended = index === analysis.recommendedSuggestionIndex;
     return {
       name: `${
-        recommended ? "★ Recommended  " : "  Alternative  "
-      }${formatConventionalCommitSubject(suggestion)}`,
+        recommended
+          ? `${theme.success("★ Recommended")}  `
+          : `${theme.secondary("✦ Alternative")}  `
+      }${formatStyledConventionalCommitSubject(suggestion, theme)}`,
       value: `suggestion:${index}`,
-      description: `${Math.round(suggestion.confidence * 100)}% confidence`,
+      description: theme.confidence(
+        suggestion.confidence,
+        `${Math.round(suggestion.confidence * 100)}% confidence`,
+      ),
     };
   });
   choices.push({
-    name: "Enter a custom message",
+    name: theme.accent("✎ Enter a custom message"),
     value: "custom",
-    description: "Type a commit message without creating a commit.",
+    description: "Create the commit with your own message.",
   });
 
   while (true) {
@@ -280,10 +334,7 @@ async function displaySuggestionSelection(
       if (selectedMessage.length === 0) {
         throw new Error("Custom commit message cannot be empty.");
       }
-      dependencies.writeOutput(
-        `Selected commit message:\n${selectedMessage}\n`,
-      );
-      return;
+      return selectedMessage;
     }
 
     const selectedIndex = Number.parseInt(
@@ -299,6 +350,7 @@ async function displaySuggestionSelection(
       `\n${formatCommitSuggestionPreview(
         suggestion,
         selectedIndex === analysis.recommendedSuggestionIndex,
+        theme,
       )}\n`,
     );
     const useSuggestion = await dependencies.confirm({
@@ -306,15 +358,134 @@ async function displaySuggestionSelection(
       default: true,
     });
     if (useSuggestion) {
+      return formatConventionalCommitMessage(suggestion);
+    }
+
+    dependencies.writeOutput(
+      `\n${theme.info("↻ Choose another suggestion.")}\n`,
+    );
+  }
+}
+
+function pushTarget(
+  context: GitPushContext,
+  remote?: string,
+): string {
+  return context.upstream ?? `${remote}/${context.branch}`;
+}
+
+async function offerPush(
+  commitHash: string,
+  theme: TerminalTheme,
+  dependencies: CliDependencies,
+): Promise<void> {
+  let context: GitPushContext;
+  try {
+    context = await dependencies.getPushContext();
+  } catch (error) {
+    if (error instanceof DetachedHeadError) {
+      dependencies.writeOutput(`${theme.warning(error.message)}\n`);
+      return;
+    }
+    throw error;
+  }
+
+  if (context.upstream !== undefined) {
+    const shouldPush = await dependencies.confirm({
+      message: `Push ${commitHash} to ${context.upstream}?`,
+      default: false,
+    });
+    if (!shouldPush) {
       dependencies.writeOutput(
-        `Selected commit message:\n${formatConventionalCommitMessage(
-          suggestion,
-        )}\n`,
+        `${theme.warning("Commit kept locally; nothing was pushed.")}\n`,
       );
       return;
     }
 
-    dependencies.writeOutput("\nChoose another suggestion.\n");
+    await dependencies.pushCurrentBranch(context);
+    dependencies.writeOutput(
+      `${theme.success(`Pushed ${commitHash} to ${context.upstream}.`)}\n`,
+    );
+    return;
+  }
+
+  if (context.remotes.length === 0) {
+    dependencies.writeOutput(
+      `${theme.warning(
+        "Commit created locally. No Git remote is configured, so nothing was pushed.",
+      )}\n`,
+    );
+    return;
+  }
+
+  let remote: string;
+  if (context.remotes.length === 1) {
+    remote = context.remotes[0]!;
+  } else {
+    const selection = await dependencies.select({
+      message: "Select a remote for this branch:",
+      choices: [
+        {
+          name: "Keep the commit local",
+          value: "local",
+          description: "Do not push anything.",
+        },
+        ...context.remotes.map((candidate) => ({
+          name: `${candidate}/${context.branch}`,
+          value: `remote:${candidate}`,
+          description: "Push and configure this branch's upstream.",
+        })),
+      ],
+    });
+    if (selection === "local") {
+      dependencies.writeOutput(
+        `${theme.warning("Commit kept locally; nothing was pushed.")}\n`,
+      );
+      return;
+    }
+    remote = selection.replace("remote:", "");
+    if (!context.remotes.includes(remote)) {
+      throw new Error("The selected Git remote is not available.");
+    }
+  }
+
+  const target = pushTarget(context, remote);
+  const shouldPush = await dependencies.confirm({
+    message: `Push ${commitHash} to ${target} and set it as upstream?`,
+    default: false,
+  });
+  if (!shouldPush) {
+    dependencies.writeOutput(
+      `${theme.warning("Commit kept locally; nothing was pushed.")}\n`,
+    );
+    return;
+  }
+
+  await dependencies.pushCurrentBranch(context, remote);
+  dependencies.writeOutput(
+    `${theme.success(`Pushed ${commitHash} to ${target}.`)}\n`,
+  );
+}
+
+async function createCommitAndOfferPush(
+  message: string,
+  theme: TerminalTheme,
+  dependencies: CliDependencies,
+): Promise<void> {
+  dependencies.writeOutput(`${theme.info("Creating local commit...")}\n`);
+  const commitHash = await dependencies.createCommit(message);
+  dependencies.writeOutput(
+    `${theme.success(`Created commit ${commitHash}.`)}\n`,
+  );
+  try {
+    await offerPush(commitHash, theme, dependencies);
+  } catch (error) {
+    const detail =
+      error instanceof Error ? error.message : "The push step failed.";
+    throw new Error(
+      `Commit ${commitHash} was created locally, but it was not pushed. ${detail}`,
+      { cause: error },
+    );
   }
 }
 
@@ -322,15 +493,16 @@ function reportActionError(
   error: unknown,
   cancellationMessage: string,
   fallbackMessage: string,
+  theme: TerminalTheme,
   dependencies: CliDependencies,
 ): void {
   if (isPromptCancellation(error)) {
-    dependencies.writeError(`${cancellationMessage}\n`);
+    dependencies.writeError(`${theme.warning(cancellationMessage)}\n`);
     return;
   }
 
   const message = error instanceof Error ? error.message : fallbackMessage;
-  dependencies.writeError(`Error: ${message}\n`);
+  dependencies.writeError(`${theme.danger(`Error: ${message}`)}\n`);
   dependencies.setExitCode(1);
 }
 
@@ -338,23 +510,28 @@ export function createProgram(
   dependencyOverrides: Partial<CliDependencies> = {},
 ): Command {
   const dependencies = { ...defaultDependencies, ...dependencyOverrides };
+  let activeTheme = createTheme();
   if (dependencyOverrides.resolveProvider === undefined) {
     dependencies.resolveProvider = (providerId, options) =>
       createProvider(providerId, {
         ...options,
         onWarning: (message) =>
-          dependencies.writeError(`Warning: ${message}\n`),
+          dependencies.writeError(
+            `${activeTheme.warning(`Warning: ${message}`)}\n`,
+          ),
       });
   }
   const program = new Command();
 
   program
     .name("git-intent")
-    .description("Inspect and analyze staged Git changes without modifying Git.")
+    .description(
+      "Inspect staged changes, generate a commit message, and optionally push.",
+    )
     .version("0.1.0")
     .showHelpAfterError();
 
-  program
+  const inspectCommand = program
     .command("inspect")
     .description("Inspect the files and diff currently staged in Git.")
     .addOption(
@@ -368,29 +545,35 @@ export function createProgram(
         "--show-diff",
         "display the full staged diff without prompting",
       ).conflicts("json"),
-    )
-    .action(async (options: InspectOptions) => {
-      try {
-        const unvalidatedAnalysis = await dependencies.inspectStagedChanges();
-        const analysis = validateStagedChangeAnalysis(unvalidatedAnalysis);
-        await displayInspection(analysis, options, dependencies);
-      } catch (error) {
-        reportActionError(
-          error,
-          "Inspection cancelled.",
-          "Inspection failed because of an unexpected error.",
-          dependencies,
-        );
-      }
-    });
+    );
+  addAppearanceOptions(inspectCommand).action(async (options: InspectOptions) => {
+    const theme = resolveTheme(options);
+    activeTheme = theme;
+    try {
+      const unvalidatedAnalysis = await dependencies.inspectStagedChanges();
+      const analysis = validateStagedChangeAnalysis(unvalidatedAnalysis);
+      await displayInspection(analysis, options, theme, dependencies);
+    } catch (error) {
+      reportActionError(
+        error,
+        "Inspection cancelled.",
+        "Inspection failed because of an unexpected error.",
+        theme,
+        dependencies,
+      );
+    }
+  });
 
-  program
+  const suggestCommand = program
     .command("suggest")
     .alias("generate")
     .description(
       "Analyze staged changes with a provider and review commit suggestions.",
     )
-    .option("--json", "print only the complete validated provider response as JSON")
+    .option(
+      "--json",
+      "print only the complete validated provider response as JSON",
+    )
     .addOption(
       new Option("--provider <provider>", "commit-analysis provider")
         .choices([...providerIds]),
@@ -422,57 +605,67 @@ export function createProgram(
       )
         .argParser(parsePositiveInteger)
         .implies({ provider: "gemini" }),
-    )
-    .action(async (options: SuggestOptions) => {
-      try {
-        const unvalidatedStagedChanges =
-          await dependencies.inspectStagedChanges();
-        const stagedChanges = validateStagedChangeAnalysis(
-          unvalidatedStagedChanges,
-        );
-        const selectedProvider = await selectProviderConfiguration(
-          options,
-          dependencies,
-        );
-        const provider =
-          selectedProvider.configuration === undefined
-            ? dependencies.resolveProvider(selectedProvider.providerId)
-            : dependencies.resolveProvider(
-                selectedProvider.providerId,
-                selectedProvider.configuration,
-              );
+    );
+  addAppearanceOptions(suggestCommand).action(async (options: SuggestOptions) => {
+    const theme = resolveTheme(options);
+    activeTheme = theme;
+    try {
+      const unvalidatedStagedChanges =
+        await dependencies.inspectStagedChanges();
+      const stagedChanges = validateStagedChangeAnalysis(
+        unvalidatedStagedChanges,
+      );
+      const selectedProvider = await selectProviderConfiguration(
+        options,
+        dependencies,
+      );
+      const provider =
+        selectedProvider.configuration === undefined
+          ? dependencies.resolveProvider(selectedProvider.providerId)
+          : dependencies.resolveProvider(
+              selectedProvider.providerId,
+              selectedProvider.configuration,
+            );
 
-        if (
-          options.json !== true &&
-          provider.progressMessage !== undefined
-        ) {
-          dependencies.writeOutput(`${provider.progressMessage}\n`);
-        }
-
-        const unvalidatedCommitAnalysis = await provider.analyze({
-          stagedChanges,
-        });
-        const commitAnalysis = validateCommitAnalysis(
-          unvalidatedCommitAnalysis,
-        );
-
-        if (options.json === true) {
-          dependencies.writeOutput(
-            `${JSON.stringify(commitAnalysis, null, 2)}\n`,
-          );
-          return;
-        }
-
-        await displaySuggestionSelection(commitAnalysis, dependencies);
-      } catch (error) {
-        reportActionError(
-          error,
-          "Suggestion selection cancelled.",
-          "Commit analysis failed because of an unexpected error.",
-          dependencies,
+      if (
+        options.json !== true &&
+        provider.progressMessage !== undefined
+      ) {
+        dependencies.writeOutput(
+          `${theme.info(`◌ ${provider.progressMessage}`)}\n`,
         );
       }
-    });
+
+      const unvalidatedCommitAnalysis = await provider.analyze({
+        stagedChanges,
+      });
+      const commitAnalysis = validateCommitAnalysis(
+        unvalidatedCommitAnalysis,
+      );
+
+      if (options.json === true) {
+        dependencies.writeOutput(
+          `${JSON.stringify(commitAnalysis, null, 2)}\n`,
+        );
+        return;
+      }
+
+      const selectedMessage = await displaySuggestionSelection(
+        commitAnalysis,
+        theme,
+        dependencies,
+      );
+      await createCommitAndOfferPush(selectedMessage, theme, dependencies);
+    } catch (error) {
+      reportActionError(
+        error,
+        "Suggestion selection cancelled.",
+        "Commit analysis failed because of an unexpected error.",
+        theme,
+        dependencies,
+      );
+    }
+  });
 
   return program;
 }

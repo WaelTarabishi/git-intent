@@ -1,5 +1,6 @@
 import type { ValidatedStagedChangeAnalysis } from "../analysis/analysis-schema.js";
 import type { StagedFileStatus } from "../git/git-types.js";
+import { createTheme, type TerminalTheme } from "./theme.js";
 
 const statusLabels: Record<StagedFileStatus, string> = {
   added: "A",
@@ -22,36 +23,50 @@ function pluralized(
 
 export function formatInspection(
   analysis: ValidatedStagedChangeAnalysis,
+  theme: TerminalTheme = createTheme(),
 ): string {
   const fileLines = analysis.files.map((file) => {
     const path =
       file.previousPath === undefined
         ? file.path
         : `${file.previousPath} -> ${file.path}`;
-    const binarySuffix = file.binary ? " (binary)" : "";
-    return `  ${statusLabels[file.status]} ${path}${binarySuffix}`;
+    const status = statusLabels[file.status];
+    const binarySuffix = file.binary ? theme.accent(" (binary)") : "";
+    return `  ${theme.fileStatus(status, status)} ${theme.primary(path)}${binarySuffix}`;
   });
 
   const statistics = analysis.statistics;
   const summaryParts = [
-    pluralized(statistics.filesChanged, "file") + " changed",
-    `${pluralized(statistics.insertions, "insertion")}(+)`,
-    `${pluralized(statistics.deletions, "deletion")}(-)`,
+    theme.primary(pluralized(statistics.filesChanged, "file") + " changed"),
+    theme.success(`+${pluralized(statistics.insertions, "insertion")}`),
+    theme.danger(`-${pluralized(statistics.deletions, "deletion")}`),
   ];
 
   if (statistics.binaryFiles > 0) {
-    summaryParts.push(pluralized(statistics.binaryFiles, "binary file"));
+    summaryParts.push(
+      theme.accent(pluralized(statistics.binaryFiles, "binary file")),
+    );
   }
 
   return [
-    `Staged changes (${pluralized(analysis.files.length, "file")}):`,
+    `${theme.brand("◆")} ${theme.heading("Staged changes")} ${theme.muted(
+      `· ${pluralized(analysis.files.length, "file")}`,
+    )}`,
     ...fileLines,
     "",
-    `Statistics: ${summaryParts.join(", ")}`,
+    `${theme.accent("Σ")} ${theme.heading("Statistics")} ${theme.muted(
+      "·",
+    )} ${summaryParts.join(theme.muted(" · "))}`,
   ].join("\n");
 }
 
-export function formatFullDiff(diff: string): string {
-  return ["", "Full staged diff:", diff || "(empty diff)"].join("\n");
+export function formatFullDiff(
+  diff: string,
+  theme: TerminalTheme = createTheme(),
+): string {
+  return [
+    "",
+    `${theme.accent("◇")} ${theme.heading("Full staged diff")}`,
+    diff || theme.muted("(empty diff)"),
+  ].join("\n");
 }
-

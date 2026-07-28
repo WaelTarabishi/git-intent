@@ -44,6 +44,17 @@ const commitAnalysis = {
   ],
 };
 
+const localCommitDependencies = {
+  createCommit: async () => "abc1234",
+  getPushContext: async () => ({
+    branch: "main",
+    remotes: [],
+  }),
+  pushCurrentBranch: async () => {
+    throw new Error("push must not be called without a configured remote");
+  },
+};
+
 afterEach(() => {
   process.exitCode = undefined;
   vi.unstubAllEnvs();
@@ -85,6 +96,7 @@ describe("suggest command", () => {
     const output: string[] = [];
 
     await createProgram({
+      ...localCommitDependencies,
       inspectStagedChanges: async () => stagedChanges,
       resolveProvider: () => ({
         id: "ollama",
@@ -105,6 +117,7 @@ describe("suggest command", () => {
     const output: string[] = [];
 
     await createProgram({
+      ...localCommitDependencies,
       inspectStagedChanges: async () => stagedChanges,
       resolveProvider,
       writeOutput: (value) => output.push(value),
@@ -133,6 +146,15 @@ describe("suggest command", () => {
     const input = vi.fn(async () => {
       throw new Error("input must not be called");
     });
+    const createCommit = vi.fn(async () => {
+      throw new Error("createCommit must not be called");
+    });
+    const getPushContext = vi.fn(async () => {
+      throw new Error("getPushContext must not be called");
+    });
+    const pushCurrentBranch = vi.fn(async () => {
+      throw new Error("pushCurrentBranch must not be called");
+    });
 
     await createProgram({
       inspectStagedChanges: async () => stagedChanges,
@@ -143,6 +165,9 @@ describe("suggest command", () => {
       confirm,
       select,
       input,
+      createCommit,
+      getPushContext,
+      pushCurrentBranch,
       writeOutput: (value) => output.push(value),
     }).parseAsync(["node", "git-intent", "suggest", "--json"]);
 
@@ -151,6 +176,9 @@ describe("suggest command", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(select).not.toHaveBeenCalled();
     expect(input).not.toHaveBeenCalled();
+    expect(createCommit).not.toHaveBeenCalled();
+    expect(getPushContext).not.toHaveBeenCalled();
+    expect(pushCurrentBranch).not.toHaveBeenCalled();
   });
 
   it("prompts for Ollama and one of its installed models", async () => {
@@ -170,6 +198,7 @@ describe("suggest command", () => {
     }));
 
     await createProgram({
+      ...localCommitDependencies,
       inspectStagedChanges: async () => stagedChanges,
       listProviderModels: listModels,
       resolveProvider,
@@ -233,6 +262,7 @@ describe("suggest command", () => {
     }));
 
     await createProgram({
+      ...localCommitDependencies,
       inspectStagedChanges: async () => stagedChanges,
       listProviderModels: listModels,
       resolveProvider,
@@ -352,6 +382,7 @@ describe("suggest command", () => {
     const output: string[] = [];
 
     await createProgram({
+      ...localCommitDependencies,
       inspectStagedChanges: async () => stagedChanges,
       resolveProvider: () => ({
         id: "ollama",
@@ -372,7 +403,7 @@ describe("suggest command", () => {
     ]);
 
     expect(output.join("")).toMatch(
-      /^Analyzing staged changes with Ollama\.\.\.\nSummary:/u,
+      /^◌ Analyzing staged changes with Ollama\.\.\.\n◆ Analysis summary/u,
     );
   });
 
@@ -419,11 +450,14 @@ describe("suggest command", () => {
     expect(errors.join("")).toContain("Warning: Sensitive staged filenames");
   });
 
-  it("lets the developer select a validated suggestion without committing", async () => {
+  it("creates a local commit from the selected validated suggestion", async () => {
     const output: string[] = [];
     const select = vi.fn(async () => "suggestion:0");
+    const createCommit = vi.fn(async () => "abc1234");
 
     await createProgram({
+      ...localCommitDependencies,
+      createCommit,
       inspectStagedChanges: async () => stagedChanges,
       resolveProvider: () => ({
         id: "ollama",
@@ -443,11 +477,13 @@ describe("suggest command", () => {
     ]);
 
     expect(output.join("")).toContain(
-      "Warning: Splitting the staged changes is recommended.",
+      "Splitting the staged changes is recommended.",
     );
     expect(output.join("")).toContain(
+      "Created commit abc1234.",
+    );
+    expect(createCommit).toHaveBeenCalledWith(
       [
-        "Selected commit message:",
         "feat(cli): add commit suggestions",
         "",
         "- Add a provider-backed flow for reviewing commit suggestions.",
@@ -499,6 +535,7 @@ describe("suggest command", () => {
     const select = vi.fn(async () => "suggestion:1");
 
     await createProgram({
+      ...localCommitDependencies,
       inspectStagedChanges: async () => stagedChanges,
       resolveProvider: () => ({
         id: "ollama",
@@ -534,8 +571,11 @@ describe("suggest command", () => {
 
   it("lets the developer enter a custom message", async () => {
     const output: string[] = [];
+    const createCommit = vi.fn(async () => "def5678");
 
     await createProgram({
+      ...localCommitDependencies,
+      createCommit,
       inspectStagedChanges: async () => stagedChanges,
       resolveProvider: () => ({
         id: "ollama",
@@ -554,8 +594,91 @@ describe("suggest command", () => {
       "test-coder:7b",
     ]);
 
+    expect(createCommit).toHaveBeenCalledWith(
+      "chore: use a custom message",
+    );
+    expect(output.join("")).toContain("Created commit def5678.");
+  });
+
+  it("keeps the created commit local when push confirmation is declined", async () => {
+    const confirmations = [true, false];
+    const confirm = vi.fn(async () => confirmations.shift() ?? false);
+    const pushCurrentBranch = vi.fn(async () => undefined);
+    const createCommit = vi.fn(async () => "abc1234");
+    const output: string[] = [];
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider: () => ({
+        id: "ollama",
+        analyze: async () => commitAnalysis,
+      }),
+      select: async () => "suggestion:0",
+      confirm,
+      createCommit,
+      getPushContext: async () => ({
+        branch: "main",
+        upstream: "origin/main",
+        remotes: ["origin"],
+      }),
+      pushCurrentBranch,
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--model",
+      "test-coder:7b",
+    ]);
+
+    expect(createCommit).toHaveBeenCalledOnce();
+    expect(pushCurrentBranch).not.toHaveBeenCalled();
+    expect(confirm.mock.calls[1]?.[0]).toMatchObject({
+      message: "Push abc1234 to origin/main?",
+      default: false,
+    });
     expect(output.join("")).toContain(
-      "Selected commit message:\nchore: use a custom message",
+      "Commit kept locally; nothing was pushed.",
+    );
+  });
+
+  it("pushes the created commit after separate confirmation", async () => {
+    const confirmations = [true, true];
+    const context = {
+      branch: "main",
+      upstream: "origin/main",
+      remotes: ["origin"],
+    };
+    const pushCurrentBranch = vi.fn(async () => undefined);
+    const output: string[] = [];
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      resolveProvider: () => ({
+        id: "ollama",
+        analyze: async () => commitAnalysis,
+      }),
+      select: async () => "suggestion:0",
+      confirm: async () => confirmations.shift() ?? false,
+      createCommit: async () => "abc1234",
+      getPushContext: async () => context,
+      pushCurrentBranch,
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "ollama",
+      "--model",
+      "test-coder:7b",
+    ]);
+
+    expect(pushCurrentBranch).toHaveBeenCalledWith(context);
+    expect(output.join("")).toContain(
+      "Pushed abc1234 to origin/main.",
     );
   });
 
