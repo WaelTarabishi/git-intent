@@ -41,7 +41,7 @@ curl http://localhost:11434/api/tags
 ```
 
 The [Ollama CLI reference](https://docs.ollama.com/cli) documents `pull`,
-`serve`, and `ls`. The default model is documented in the
+`serve`, and `ls`. The fallback model is documented in the
 [Ollama model library](https://ollama.com/library/qwen2.5-coder:7b).
 
 ## Usage
@@ -49,13 +49,17 @@ The [Ollama CLI reference](https://docs.ollama.com/cli) documents `pull`,
 Interactive review:
 
 ```sh
-git-intent suggest --provider ollama
+git-intent generate
 ```
+
+The CLI asks you to select Ollama, requests the installed model list from
+`GET /api/tags`, and asks you to select a model. Pass `--provider ollama` to
+skip the provider menu, or `--model <name>` to skip the model menu.
 
 Machine-readable, non-interactive output:
 
 ```sh
-git-intent suggest --provider ollama --json
+git-intent generate --provider ollama --model qwen2.5-coder:7b --json
 ```
 
 Override configuration:
@@ -75,7 +79,7 @@ GIT_INTENT_OLLAMA_MODEL=qwen2.5-coder:7b
 GIT_INTENT_OLLAMA_TIMEOUT_MS=120000
 ```
 
-For URL, model, and timeout, precedence is:
+For non-interactive use, URL, model, and timeout precedence is:
 
 ```text
 CLI option -> environment variable -> default
@@ -106,7 +110,8 @@ The prompt includes:
 
 ## Privacy and safety
 
-The default URL is loopback-only, and the default model is locally downloadable.
+The default URL is loopback-only, and the fallback model is locally
+downloadable.
 Known Ollama cloud-model names and direct `ollama.com` API endpoints are
 rejected. Git Intent does not read Ollama or cloud API keys.
 
@@ -140,6 +145,12 @@ before running the provider on sensitive work.
 - Check `curl http://localhost:11434/api/tags`.
 - Verify `GIT_INTENT_OLLAMA_URL` or `--ollama-url`.
 
+`Ollama closed the connection before responding`
+
+- Check the Ollama logs for a terminated model runner.
+- Free RAM or VRAM, or use a model and context size that fit the machine.
+- Stage fewer related files or hunks to reduce the prompt size.
+
 `Ollama model "... " is unavailable`
 
 - Run `ollama pull <model>`.
@@ -156,7 +167,7 @@ before running the provider on sensitive work.
 
 - Retry once; local model output can vary.
 - Confirm the model supports structured output well.
-- Try the documented default model or another capable local code model.
+- Try the documented fallback model or another capable local code model.
 
 `staged diff ... exceeding the ... safety limit`
 

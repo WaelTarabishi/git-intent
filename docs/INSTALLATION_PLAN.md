@@ -11,9 +11,8 @@ The initial development environment needs:
 - Git, available on the command path.
 - A terminal capable of running the CLI and interactive prompts in later phases.
 
-Ollama is an optional external prerequisite when the developer chooses the
-local provider in Phase 3. It is not required for inspection or the mock
-provider.
+Ollama is required for commit analysis in Phase 3. It is not required for
+staged-change inspection.
 
 OpenAI and Gemini accounts or API keys are not required until their opt-in adapters are developed in Phase 4.
 

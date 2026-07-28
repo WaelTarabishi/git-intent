@@ -142,6 +142,23 @@ describe("OllamaProvider", () => {
     );
   });
 
+  it("reports when Ollama resets the connection during generation", async () => {
+    const provider = new OllamaProvider({
+      httpClient: async () => {
+        throw new TypeError("fetch failed", {
+          cause: Object.assign(new Error("read ECONNRESET"), {
+            code: "ECONNRESET",
+          }),
+        });
+      },
+      environment: {},
+    });
+
+    await expect(provider.analyze({ stagedChanges })).rejects.toThrow(
+      /exceeded available RAM, VRAM, or context capacity/u,
+    );
+  });
+
   it("reports a request timeout", async () => {
     const httpClient: OllamaHttpClient = async (_input, init) =>
       new Promise((_resolve, reject) => {

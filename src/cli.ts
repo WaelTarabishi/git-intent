@@ -6,6 +6,7 @@ import {
   select as selectPrompt,
 } from "@inquirer/prompts";
 import { Command, InvalidArgumentError, Option } from "commander";
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -22,6 +23,7 @@ import type { StagedChangeAnalysis } from "./git/git-types.js";
 import type { CommitAnalysisProvider } from "./providers/commit-analysis-provider.js";
 import {
   createProvider,
+  listProviderModels,
   providerIds,
   type ProviderConfigurationOverrides,
   type ProviderId,
@@ -39,7 +41,7 @@ interface InspectOptions {
 
 interface SuggestOptions {
   json?: boolean;
-  provider: ProviderId;
+  provider?: ProviderId;
   ollamaUrl?: string;
   model?: string;
   ollamaTimeout?: number;
@@ -57,6 +59,10 @@ export interface CliDependencies {
     providerId: ProviderId,
     options?: ProviderConfigurationOverrides,
   ): CommitAnalysisProvider;
+  listProviderModels(
+    providerId: ProviderId,
+    options?: ProviderConfigurationOverrides,
+  ): Promise<readonly string[]>;
   confirm(options: { message: string; default?: boolean }): Promise<boolean>;
   select(options: {
     message: string;
@@ -74,6 +80,7 @@ export interface CliDependencies {
 const defaultDependencies: CliDependencies = {
   inspectStagedChanges: async () => new GitService().inspectStagedChanges(),
   resolveProvider: createProvider,
+  listProviderModels,
   confirm: async (options) => confirmPrompt(options),
   select: async (options) => selectPrompt(options),
   input: async (options) => inputPrompt(options),
@@ -108,6 +115,74 @@ function providerConfigurationOverrides(
   }
 
   return Object.keys(overrides).length === 0 ? undefined : overrides;
+}
+
+function isProviderId(value: string): value is ProviderId {
+  return providerIds.some((providerId) => providerId === value);
+}
+
+function providerDisplayName(providerId: ProviderId): string {
+  switch (providerId) {
+    case "ollama":
+      return "Ollama (local)";
+  }
+}
+
+interface SelectedProvider {
+  providerId: ProviderId;
+  configuration?: ProviderConfigurationOverrides;
+}
+
+async function selectProviderConfiguration(
+  options: SuggestOptions,
+  dependencies: CliDependencies,
+): Promise<SelectedProvider> {
+  let providerId = options.provider;
+  if (providerId === undefined) {
+    if (options.json === true) {
+      providerId = "ollama";
+    } else {
+      const selection = await dependencies.select({
+        message: "Select a commit-analysis provider:",
+        choices: providerIds.map((id) => ({
+          name: providerDisplayName(id),
+          value: id,
+          description: "Run an installed model through your Ollama server.",
+        })),
+      });
+      if (!isProviderId(selection)) {
+        throw new Error("The selected provider is not available.");
+      }
+      providerId = selection;
+    }
+  }
+
+  let configuration = providerConfigurationOverrides(options);
+  if (options.json !== true && options.model === undefined) {
+    dependencies.writeOutput("Loading installed Ollama models...\n");
+    const installedModels = await dependencies.listProviderModels(
+      providerId,
+      configuration,
+    );
+    const selectedModel = await dependencies.select({
+      message: "Select an installed Ollama model:",
+      choices: installedModels.map((model) => ({
+        name: model,
+        value: model,
+      })),
+    });
+    if (!installedModels.includes(selectedModel)) {
+      throw new Error("The selected Ollama model is not available.");
+    }
+    configuration = {
+      ...configuration,
+      model: selectedModel,
+    };
+  }
+
+  return configuration === undefined
+    ? { providerId }
+    : { providerId, configuration };
 }
 
 function isPromptCancellation(error: unknown): boolean {
@@ -268,14 +343,14 @@ export function createProgram(
 
   program
     .command("suggest")
+    .alias("generate")
     .description(
       "Analyze staged changes with a provider and review commit suggestions.",
     )
     .option("--json", "print only the complete validated provider response as JSON")
     .addOption(
       new Option("--provider <provider>", "commit-analysis provider")
-        .choices([...providerIds])
-        .default("mock"),
+        .choices([...providerIds]),
     )
     .addOption(
       new Option(
@@ -304,14 +379,16 @@ export function createProgram(
         const stagedChanges = validateStagedChangeAnalysis(
           unvalidatedStagedChanges,
         );
-        const configurationOverrides =
-          providerConfigurationOverrides(options);
+        const selectedProvider = await selectProviderConfiguration(
+          options,
+          dependencies,
+        );
         const provider =
-          configurationOverrides === undefined
-            ? dependencies.resolveProvider(options.provider)
+          selectedProvider.configuration === undefined
+            ? dependencies.resolveProvider(selectedProvider.providerId)
             : dependencies.resolveProvider(
-                options.provider,
-                configurationOverrides,
+                selectedProvider.providerId,
+                selectedProvider.configuration,
               );
 
         if (
@@ -353,7 +430,20 @@ export async function runCli(argv = process.argv): Promise<void> {
   await createProgram().parseAsync(argv);
 }
 
-const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : undefined;
-if (entryPath !== undefined && fileURLToPath(import.meta.url) === entryPath) {
+function resolveEntryPath(filePath: string): string {
+  try {
+    return realpathSync(path.resolve(filePath));
+  } catch {
+    return path.resolve(filePath);
+  }
+}
+
+const entryPath = process.argv[1]
+  ? resolveEntryPath(process.argv[1])
+  : undefined;
+if (
+  entryPath !== undefined &&
+  resolveEntryPath(fileURLToPath(import.meta.url)) === entryPath
+) {
   await runCli();
 }

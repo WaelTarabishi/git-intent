@@ -1,4 +1,5 @@
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -7,6 +8,7 @@ import { execa } from "execa";
 import { afterEach, describe, expect, it } from "vitest";
 
 const temporaryDirectories: string[] = [];
+const servers: Server[] = [];
 const cliEntry = fileURLToPath(new URL("../src/cli.ts", import.meta.url));
 const tsxLoader = import.meta.resolve("tsx");
 
@@ -23,6 +25,20 @@ async function git(cwd: string, args: readonly string[]): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(
+    servers.splice(0).map(
+      (server) =>
+        new Promise<void>((resolve, reject) => {
+          server.close((error) => {
+            if (error === undefined) {
+              resolve();
+            } else {
+              reject(error);
+            }
+          });
+        }),
+    ),
+  );
+  await Promise.all(
     temporaryDirectories.splice(0).map((directory) =>
       rm(directory, { recursive: true, force: true }),
     ),
@@ -30,7 +46,7 @@ afterEach(async () => {
 });
 
 describe("suggest command integration", () => {
-  it("returns mock JSON without changing the fixture index or history", async () => {
+  it("returns Ollama JSON without changing the fixture index or history", async () => {
     const repository = await createTemporaryRepository();
     await writeFile(
       path.join(repository, "feature.ts"),
@@ -43,6 +59,34 @@ describe("suggest command integration", () => {
       historyCount: await git(repository, ["rev-list", "--count", "--all"]),
     };
 
+    const server = createServer((_request, response) => {
+      response.setHeader("content-type", "application/json");
+      response.end(
+        JSON.stringify({
+          response: JSON.stringify({
+            summary: "The staged change adds a feature flag.",
+            splitRecommended: false,
+            suggestions: [
+              {
+                type: "feat",
+                description: "add feature flag",
+                explanation: "The staged file introduces a feature flag.",
+                confidence: 0.95,
+              },
+            ],
+          }),
+        }),
+      );
+    });
+    servers.push(server);
+    await new Promise<void>((resolve) => {
+      server.listen(0, "127.0.0.1", resolve);
+    });
+    const address = server.address();
+    if (address === null || typeof address === "string") {
+      throw new Error("The fake Ollama server did not expose a TCP port.");
+    }
+
     const result = await execa(
       process.execPath,
       [
@@ -51,7 +95,11 @@ describe("suggest command integration", () => {
         cliEntry,
         "suggest",
         "--provider",
-        "mock",
+        "ollama",
+        "--ollama-url",
+        `http://127.0.0.1:${address.port}`,
+        "--model",
+        "integration-model:latest",
         "--json",
       ],
       { cwd: repository },
@@ -68,10 +116,10 @@ describe("suggest command integration", () => {
     };
 
     expect(response).toMatchObject({
-      summary: "Staged changes update 1 file with 1 insertion and 0 deletions.",
+      summary: "The staged change adds a feature flag.",
       splitRecommended: false,
     });
-    expect(response.suggestions).toHaveLength(3);
+    expect(response.suggestions).toHaveLength(1);
     expect(after).toEqual(before);
     expect(after.historyCount).toBe("0");
   });

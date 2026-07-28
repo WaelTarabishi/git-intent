@@ -83,7 +83,7 @@ function normalizeBaseUrl(value: string): string {
   return parsed.toString().replace(/\/+$/u, "");
 }
 
-function validateLocalModelName(value: string): string {
+export function validateLocalModelName(value: string): string {
   if (/(?:^|[:_-])cloud(?:$|[:_-])/iu.test(value)) {
     throw new Error(
       "Ollama cloud models are not supported. Choose a locally installed model.",

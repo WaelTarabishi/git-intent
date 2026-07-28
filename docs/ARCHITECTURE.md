@@ -159,11 +159,6 @@ output.
 The registry owns the supported provider identifiers and adapter construction:
 
 ```text
---provider mock
-    -> provider registry
-    -> MockCommitAnalysisProvider
-    -> common provider interface
-
 --provider ollama [neutral overrides]
     -> provider registry
     -> OllamaProvider
@@ -175,15 +170,14 @@ Unsupported provider names are rejected by CLI option parsing before analysis.
 Provider configuration precedence is CLI override, environment variable, then
 provider default.
 
-## Provider replacement
+## Provider extension
 
-A later adapter can replace the mock without changing the Git, schema, UI, or
-CLI orchestration contracts:
+A later adapter can be added without changing the Git, schema, UI, or CLI
+orchestration contracts:
 
 ```text
 Validated staged changes
     -> CommitAnalysisProvider
-        -> mock adapter (Phase 2)
         -> Ollama adapter (Phase 3)
         -> OpenAI adapter (future Phase 4)
         -> Gemini adapter (future Phase 4)
@@ -215,7 +209,6 @@ remains untrusted until Zod validation succeeds.
 - Only the Ollama provider makes an HTTP request, using native `fetch`.
 - Known Ollama cloud model names and direct `ollama.com` endpoints are rejected.
 - No OpenAI or Gemini dependency or adapter is present.
-- The mock provider is deterministic for the same validated staged input.
 - The current index and commit history remain unchanged by inspection and
   suggestion commands.
 

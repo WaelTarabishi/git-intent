@@ -1,9 +1,9 @@
 # Git Intent
 
 Git Intent is a read-only staged-change inspection and commit-analysis CLI.
-Phase 3 can generate structured suggestions with either the deterministic mock
-provider or a locally running Ollama model. It never stages files, creates
-commits, pushes, reads cloud API keys, or calls OpenAI or Gemini.
+It generates structured suggestions with a locally running Ollama model. It
+never stages files, creates commits, pushes, reads cloud API keys, or calls
+OpenAI or Gemini.
 
 ## Requirements and installation
 
@@ -18,9 +18,9 @@ npm link
 The executable is available as `git-intent`. The existing `smart-commit`
 executable remains as a compatibility alias.
 
-Ollama is an optional external prerequisite. It is needed only for
-`--provider ollama`; see [docs/OLLAMA.md](docs/OLLAMA.md) for platform
-installation links and local-model setup.
+Ollama is required for `suggest` and `generate`, but not for `inspect`. See
+[docs/OLLAMA.md](docs/OLLAMA.md) for platform installation links and
+local-model setup.
 
 ## Development commands
 
@@ -54,20 +54,18 @@ git-intent inspect --json
 
 ## Review commit suggestions
 
-Analyze the staged snapshot with the deterministic mock provider:
-
-```sh
-git-intent suggest
-git-intent suggest --provider mock
-```
-
-Analyze it with a local Ollama model:
+Pull at least one Ollama model, stage your changes, and start the interactive
+flow:
 
 ```sh
 ollama pull qwen2.5-coder:7b
-git-intent suggest --provider ollama
-git-intent suggest --provider ollama --json
+git add <files>
+git-intent generate
 ```
+
+`generate` is an alias of `suggest` and accepts the same options.
+The command first asks you to select a provider, then loads the models installed
+in the selected Ollama server and asks you to choose one.
 
 The interactive command displays the provider summary, warns if the validated
 response recommends splitting, shows between one and three suggestions, and
@@ -78,8 +76,10 @@ For automation or inspection, return only the complete validated provider
 response:
 
 ```sh
-git-intent suggest --json
-git-intent suggest --provider mock --json
+git-intent generate \
+  --provider ollama \
+  --model qwen2.5-coder:7b \
+  --json
 ```
 
 JSON mode never opens an interactive prompt. Errors are written to standard
@@ -90,8 +90,8 @@ are not included. An empty staging area is rejected before a provider is called.
 
 ### Ollama configuration
 
-The default endpoint is `http://localhost:11434`, the default model is
-`qwen2.5-coder:7b`, and the default request timeout is 120 seconds.
+The default endpoint is `http://localhost:11434`, the non-interactive fallback
+model is `qwen2.5-coder:7b`, and the default request timeout is 120 seconds.
 
 | Setting | Environment variable | CLI override |
 | --- | --- | --- |
@@ -99,8 +99,10 @@ The default endpoint is `http://localhost:11434`, the default model is
 | Model | `GIT_INTENT_OLLAMA_MODEL` | `--model <model>` |
 | Timeout in milliseconds | `GIT_INTENT_OLLAMA_TIMEOUT_MS` | `--ollama-timeout <milliseconds>` |
 
-Precedence is CLI option, then environment variable, then the documented
-default. For example:
+In interactive mode, omitting `--model` opens the installed-model selector.
+Providing `--model` skips that selector. In non-interactive JSON mode,
+precedence is CLI option, then environment variable, then the documented
+fallback. For example:
 
 ```sh
 GIT_INTENT_OLLAMA_MODEL=qwen2.5-coder:3b git-intent suggest --provider ollama
@@ -131,20 +133,20 @@ The accepted Conventional Commit types are `build`, `chore`, `ci`, `docs`,
   change data.
 - A provider receives that data through the common `CommitAnalysisProvider`
   interface.
-- The mock provider returns deterministic local data and performs no I/O.
 - The Ollama provider owns environment configuration, local HTTP communication,
   timeouts, error mapping, response parsing, and Zod validation.
+- The Ollama model discovery layer reads `/api/tags` and exposes installed
+  local models to the interactive selector.
 - A dedicated prompt module owns the instructions, JSON Schema, filenames,
   recent commit context, and untrusted staged-diff delimiters.
 - An isolated safety module detects sensitive filenames for warnings and can
   support stricter provider policies later.
 - The shared validation layer treats provider output as untrusted at runtime.
 - The UI formats only validated suggestions.
-- The CLI selects a provider by identifier and contains no provider-specific
-  request logic.
+- The CLI selects a provider and installed model without owning HTTP request
+  logic.
 
-Both providers implement the same `CommitAnalysisProvider` interface. The CLI
-contains no Ollama HTTP or response-parsing logic.
+The CLI contains no Ollama HTTP or response-parsing logic.
 
 ## Package responsibilities
 
@@ -152,7 +154,8 @@ contains no Ollama HTTP or response-parsing logic.
   help.
 - `execa` invokes the installed `git` executable with argument arrays and no
   shell command construction.
-- `@inquirer/prompts` handles suggestion selection and custom-message input.
+- `@inquirer/prompts` handles provider, model, suggestion, and custom-message
+  selection.
 - `zod` validates staged-change data and provider responses before output.
 - `typescript` type-checks and builds the CLI.
 - `tsx` runs the TypeScript entry point during development.

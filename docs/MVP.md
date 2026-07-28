@@ -47,7 +47,7 @@ Create a trustworthy CLI foundation that can inspect the current staged Git chan
 - Fixtures or integration coverage for rename, deletion, binary files, spaces, and Unicode paths.
 - A test proving inspection does not change the index, working tree, or commit history.
 
-## Phase 2: Mock suggestions and interactive review
+## Phase 2: Provider contract and interactive review
 
 ### Goal
 
@@ -55,7 +55,7 @@ Prove the complete provider-independent review flow using deterministic fake dat
 
 ### Features
 
-- A mock provider implementing the conceptual provider contract.
+- A provider contract exercised through deterministic test doubles.
 - A provider-neutral suggestion request and raw result.
 - Structured response parsing and Zod validation.
 - Conventional Commit shape validation.
@@ -70,11 +70,11 @@ Prove the complete provider-independent review flow using deterministic fake dat
 - API keys and cloud configuration.
 - Actual `git commit`.
 - Automatic editing, staging, or splitting changes.
-- Claims that schema-valid mock suggestions are semantically correct.
+- Claims that schema-valid test suggestions are semantically correct.
 
 ### Acceptance criteria
 
-- The mock provider can be exchanged through the provider boundary without changing Git or prompt-layer behavior.
+- Provider implementations can be exchanged through the provider boundary without changing Git or prompt-layer behavior.
 - Malformed, missing, duplicated, and empty suggestions are rejected before display.
 - The developer can select one of multiple valid suggestions or cancel.
 - Selection does not imply confirmation.
@@ -85,7 +85,7 @@ Prove the complete provider-independent review flow using deterministic fake dat
 
 - Schema tests for valid and invalid provider results.
 - Conventional Commit validation tests.
-- Provider contract tests run against the mock adapter.
+- Provider contract tests run against injected test doubles.
 - CLI tests for selecting each candidate, declining confirmation, and cancelling.
 - Tests for malformed JSON, wrong field types, too few or too many candidates, duplicates, and unsafe control characters.
 - An end-to-end test proving the simulated flow leaves Git history and the index unchanged.
@@ -120,7 +120,7 @@ Generate real suggestions through a locally running model while keeping the same
 
 ### Acceptance criteria
 
-- The Ollama adapter can replace the mock adapter without changing the CLI, Git, validation, or review contracts.
+- The Ollama adapter implements the provider boundary without changing the Git, validation, or review contracts.
 - A missing service or model produces a helpful error and no Git mutation.
 - Only bounded content reaches the local HTTP request, with sensitive-looking
   filenames disclosed as warnings.

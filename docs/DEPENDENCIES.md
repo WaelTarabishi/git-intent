@@ -247,8 +247,8 @@ adapters, plus selected integration tests.
 commit-suggestion request to a loopback HTTP address, receives model output, and
 passes that untrusted output to the validation layer.
 
-**Status:** Optional external system tool required now only when
-`--provider ollama` is selected. It is not an npm dependency.
+**Status:** External system tool required for `suggest` and `generate`. It is
+not an npm dependency and is not required for `inspect`.
 
 **Built-in Node.js alternative:** Node.js native `fetch` is sufficient for calling Ollama's HTTP API. There is no built-in alternative that runs the language model itself.
 

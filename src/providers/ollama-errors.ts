@@ -1,7 +1,32 @@
+function errorCode(error: unknown): string | undefined {
+  const visited = new Set<object>();
+  let current = error;
+
+  while (
+    typeof current === "object" &&
+    current !== null &&
+    !visited.has(current)
+  ) {
+    visited.add(current);
+    if ("code" in current && typeof current.code === "string") {
+      return current.code;
+    }
+    current = "cause" in current ? current.cause : undefined;
+  }
+
+  return undefined;
+}
+
 export class OllamaUnavailableError extends Error {
-  constructor() {
+  constructor(cause?: unknown) {
+    const code = errorCode(cause);
+    const connectionClosed =
+      code === "ECONNRESET" || code === "UND_ERR_SOCKET";
     super(
-      "Cannot reach Ollama. Install Ollama and make sure its server is running, then confirm the configured URL is reachable.",
+      connectionClosed
+        ? "Ollama closed the connection before responding. Its model runner may have stopped because the request exceeded available RAM, VRAM, or context capacity. Check the Ollama logs, free memory, or stage fewer changes and try again."
+        : "Cannot reach Ollama. Install Ollama and make sure its server is running, then confirm the configured URL is reachable.",
+      cause === undefined ? undefined : { cause },
     );
     this.name = "OllamaUnavailableError";
   }
@@ -13,6 +38,22 @@ export class OllamaModelUnavailableError extends Error {
       `Ollama model "${model}" is unavailable. Pull it with \`ollama pull ${model}\` or choose another model.`,
     );
     this.name = "OllamaModelUnavailableError";
+  }
+}
+
+export class OllamaNoModelsError extends Error {
+  constructor() {
+    super(
+      "No local Ollama models are installed. Install one with `ollama pull <model>` and try again.",
+    );
+    this.name = "OllamaNoModelsError";
+  }
+}
+
+export class OllamaInvalidModelListError extends Error {
+  constructor() {
+    super("Ollama returned an invalid installed-model list.");
+    this.name = "OllamaInvalidModelListError";
   }
 }
 

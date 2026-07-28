@@ -1,11 +1,11 @@
-import { MockCommitAnalysisProvider } from "./mock-provider.js";
 import type { CommitAnalysisProvider } from "./commit-analysis-provider.js";
+import { listInstalledOllamaModels } from "./ollama-models.js";
 import {
   OllamaProvider,
   type OllamaProviderOptions,
 } from "./ollama-provider.js";
 
-export const providerIds = ["mock", "ollama"] as const;
+export const providerIds = ["ollama"] as const;
 export type ProviderId = (typeof providerIds)[number];
 export type ProviderConfigurationOverrides = Pick<
   OllamaProviderOptions,
@@ -17,9 +17,17 @@ export function createProvider(
   options: OllamaProviderOptions = {},
 ): CommitAnalysisProvider {
   switch (providerId) {
-    case "mock":
-      return new MockCommitAnalysisProvider();
     case "ollama":
       return new OllamaProvider(options);
+  }
+}
+
+export function listProviderModels(
+  providerId: ProviderId,
+  options: ProviderConfigurationOverrides = {},
+): Promise<readonly string[]> {
+  switch (providerId) {
+    case "ollama":
+      return listInstalledOllamaModels(options);
   }
 }

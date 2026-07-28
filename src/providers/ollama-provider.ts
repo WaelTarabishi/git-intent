@@ -19,6 +19,7 @@ import {
   type OllamaConfigurationOverrides,
   type OllamaEnvironment,
 } from "./ollama-config.js";
+import type { OllamaHttpClient } from "./ollama-http-client.js";
 import {
   OllamaDiffTooLargeError,
   OllamaEmptyResponseError,
@@ -30,10 +31,7 @@ import {
   OllamaUnavailableError,
 } from "./ollama-errors.js";
 
-export type OllamaHttpClient = (
-  input: string | URL,
-  init?: RequestInit,
-) => Promise<Response>;
+export type { OllamaHttpClient } from "./ollama-http-client.js";
 
 export interface OllamaProviderOptions extends OllamaConfigurationOverrides {
   environment?: OllamaEnvironment;
@@ -165,11 +163,11 @@ export class OllamaProvider implements CommitAnalysisProvider {
         },
       );
       responseBody = await response.text();
-    } catch {
+    } catch (error) {
       if (controller.signal.aborted) {
         throw new OllamaTimeoutError(this.configuration.timeoutMs);
       }
-      throw new OllamaUnavailableError();
+      throw new OllamaUnavailableError(error);
     } finally {
       clearTimeout(timeout);
     }
