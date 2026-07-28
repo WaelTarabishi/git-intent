@@ -1,7 +1,7 @@
 import { CommanderError } from "commander";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createProgram } from "../src/cli.js";
+import { createProgram, waitForCliRun } from "../src/cli.js";
 import { NoStagedFilesError } from "../src/git/git-service.js";
 import type { CommitAnalysisProvider } from "../src/providers/commit-analysis-provider.js";
 
@@ -41,6 +41,26 @@ const commitAnalysis = {
       explanation: "The staged diff adds a new user-facing command.",
       confidence: 0.9,
     },
+    {
+      type: "refactor" as const,
+      scope: "cli",
+      description: "organize commit suggestion workflow",
+      details: ["Separate commit analysis from interactive review."],
+      tests: ["Cover the refactored suggestion workflow."],
+      breakingChanges: [],
+      explanation: "A structure-focused alternative.",
+      confidence: 0.78,
+    },
+    {
+      type: "test" as const,
+      scope: "cli",
+      description: "expand commit suggestion coverage",
+      details: ["Exercise provider-backed commit suggestion behavior."],
+      tests: ["Add regression coverage for suggestion selection."],
+      breakingChanges: [],
+      explanation: "A test-focused alternative.",
+      confidence: 0.7,
+    },
   ],
 };
 
@@ -57,11 +77,27 @@ const localCommitDependencies = {
 
 afterEach(() => {
   process.exitCode = undefined;
+  vi.useRealTimers();
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
 
 describe("CLI options", () => {
+  it("keeps an interactive CLI alive through a pending final prompt", async () => {
+    vi.useFakeTimers();
+    let resolvePrompt: (() => void) | undefined;
+    const promptPromise = new Promise<void>((resolve) => {
+      resolvePrompt = resolve;
+    });
+
+    const cliRun = waitForCliRun(promptPromise, true);
+
+    expect(vi.getTimerCount()).toBe(1);
+    resolvePrompt?.();
+    await expect(cliRun).resolves.toBeUndefined();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("rejects --json and --show-diff when used together", async () => {
     const program = createProgram()
       .exitOverride()

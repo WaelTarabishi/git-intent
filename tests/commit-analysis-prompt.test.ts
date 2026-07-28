@@ -42,11 +42,11 @@ describe("buildCommitAnalysisPrompt", () => {
     );
   });
 
-  it("requests Conventional Commits, one to three suggestions, grounded output, and split advice", () => {
+  it("requests three Conventional Commits, grounded output, and split advice", () => {
     const result = buildCommitAnalysisPrompt(stagedChanges);
 
     expect(result.prompt).toContain(
-      "between one and three Conventional Commit suggestions",
+      "exactly three distinct Conventional Commit suggestions",
     );
     expect(result.prompt).toContain("splitRecommended to true");
     expect(result.prompt).toContain("concrete implementation details");

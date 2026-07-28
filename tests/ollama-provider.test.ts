@@ -49,6 +49,26 @@ const validCommitAnalysis = {
       explanation: "The staged diff adds local provider behavior.",
       confidence: 0.91,
     },
+    {
+      type: "refactor",
+      scope: "providers",
+      description: "integrate local analysis adapter",
+      details: ["Route staged changes through the Ollama adapter."],
+      tests: [],
+      breakingChanges: [],
+      explanation: "A provider-architecture alternative.",
+      confidence: 0.8,
+    },
+    {
+      type: "test",
+      scope: "providers",
+      description: "cover local commit analysis",
+      details: ["Exercise structured Ollama analysis responses."],
+      tests: ["Validate Ollama provider responses."],
+      breakingChanges: [],
+      explanation: "A test-oriented alternative.",
+      confidence: 0.72,
+    },
   ],
 };
 

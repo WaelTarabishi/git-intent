@@ -22,6 +22,26 @@ const validCommitAnalysis = {
       explanation: "The staged diff adds a new user-facing command.",
       confidence: 0.9,
     },
+    {
+      type: "refactor",
+      scope: "cli",
+      description: "organize commit analysis",
+      details: ["Separate analysis from interactive review."],
+      tests: [],
+      breakingChanges: [],
+      explanation: "A structure-focused alternative.",
+      confidence: 0.8,
+    },
+    {
+      type: "test",
+      scope: "cli",
+      description: "cover commit suggestions",
+      details: ["Exercise commit suggestion behavior."],
+      tests: ["Add commit suggestion regression coverage."],
+      breakingChanges: [],
+      explanation: "A test-focused alternative.",
+      confidence: 0.7,
+    },
   ],
 };
 
@@ -79,10 +99,40 @@ describe("commitAnalysisSchema", () => {
     expect(result.success).toBe(false);
   });
 
+  it.each([1, 2, 4])(
+    "rejects a provider response containing %s suggestions",
+    (suggestionCount) => {
+      const suggestions = [
+        ...validCommitAnalysis.suggestions,
+        {
+          ...validCommitAnalysis.suggestions[0],
+          description: "add another commit suggestion",
+        },
+      ].slice(0, suggestionCount);
+
+      const result = commitAnalysisSchema.safeParse({
+        ...validCommitAnalysis,
+        suggestions,
+      });
+
+      expect(result.success).toBe(false);
+    },
+  );
+
+  it("rejects duplicate commit subjects", () => {
+    const duplicate = validCommitAnalysis.suggestions[0];
+    const result = commitAnalysisSchema.safeParse({
+      ...validCommitAnalysis,
+      suggestions: [duplicate, duplicate, duplicate],
+    });
+
+    expect(result.success).toBe(false);
+  });
+
   it("rejects a recommended index that does not reference a suggestion", () => {
     const result = commitAnalysisSchema.safeParse({
       ...validCommitAnalysis,
-      recommendedSuggestionIndex: 1,
+      recommendedSuggestionIndex: 3,
     });
 
     expect(result.success).toBe(false);

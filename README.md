@@ -43,17 +43,26 @@ starts selected.
 │ ◆ Git Intent                           Gemini · Aurora theme │
 ╰──────────────────────────────────────────────────────────────╯
 
-  ✓ Inspected 12 staged files
-  ✓ Loaded 5 recent commit subjects
-  ✻ Analyzing changes with Gemini…                         4.2s
+  ✓ 12 staged files · 5 recent subjects · Analyzed with Gemini   4.2s
+
+  Suggested commit
+
+  ❯ ★ feat(cli): improve commit selection                        96%
+      refactor(ui): simplify terminal rendering                  81%
+
+  [Enter Use #1] [C Write custom] [Esc Cancel]
+  ↑↓ or J/K move · active commit is underlined
 ```
 
 Click a suggestion to select it; click the selected suggestion again to accept
-it. The `[ Accept ]`, `[ Custom ]`, and `[ Cancel ]` actions are also clickable
-in terminals that support SGR mouse events. With the keyboard, use `↑` and `↓`
-to navigate (`J` and `K` also work), `Enter` to accept, `C` for a custom
-message, and `Esc` or `Ctrl+C` to cancel. Disable motion while keeping the
-interactive screen with `--no-animation`:
+it. The Use, Write custom, and Cancel actions remain directly below the
+suggestions and are clickable in terminals that support SGR mouse events. The
+active subject is underlined, and every row keeps the same width while the
+selection moves. With the keyboard, use `↑` and `↓` to navigate (`J` and `K`
+also work), `Enter` to accept, `C` to write a custom message, and `Esc` or
+`Ctrl+C` to cancel. The selection screen does not scroll. Long subjects wrap
+without losing text, and the compact details panel limits its height. Disable
+motion while keeping the interactive screen with `--no-animation`:
 
 ```sh
 git-intent suggest --no-animation
@@ -239,7 +248,7 @@ Every provider result passes through the same Zod schema. The response contains:
 
 - A staged-change summary.
 - A split recommendation and optional reason.
-- Between one and three suggestions.
+- Exactly three distinct suggestions for comparison.
 - The zero-based index of the provider's recommended suggestion.
 - A Conventional Commit type, optional scope, description, one to six
   implementation details, test details, breaking changes, explanation, and

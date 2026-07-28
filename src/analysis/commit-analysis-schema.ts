@@ -54,7 +54,9 @@ export const commitAnalysisSchema = z
     splitRecommended: z.boolean(),
     splitReason: singleLineText("Split reason", 500).optional(),
     recommendedSuggestionIndex: z.number().int().min(0).max(2),
-    suggestions: z.array(commitSuggestionSchema).min(1).max(3),
+    suggestions: z
+      .array(commitSuggestionSchema)
+      .length(3, "Exactly three commit suggestions are required"),
   })
   .superRefine((analysis, context) => {
     if (analysis.recommendedSuggestionIndex >= analysis.suggestions.length) {
@@ -62,6 +64,20 @@ export const commitAnalysisSchema = z
         code: "custom",
         path: ["recommendedSuggestionIndex"],
         message: "Recommended suggestion index must reference a suggestion",
+      });
+    }
+
+    const uniqueSubjects = new Set(
+      analysis.suggestions.map(
+        (suggestion) =>
+          `${suggestion.type}:${suggestion.scope ?? ""}:${suggestion.description}`,
+      ),
+    );
+    if (uniqueSubjects.size !== analysis.suggestions.length) {
+      context.addIssue({
+        code: "custom",
+        path: ["suggestions"],
+        message: "Commit suggestions must have distinct subjects",
       });
     }
   });

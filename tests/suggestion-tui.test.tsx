@@ -103,9 +103,11 @@ function terminalOutput(): NodeJS.WriteStream {
   const stream = new PassThrough() as PassThrough & {
     columns: number;
     isTTY: boolean;
+    rows: number;
   };
   stream.columns = 80;
   stream.isTTY = true;
+  stream.rows = 24;
   return stream as unknown as NodeJS.WriteStream;
 }
 
@@ -130,9 +132,9 @@ describe("interactive suggestion TUI", () => {
 
     expect(output).toContain("◆ Git Intent");
     expect(output).toContain("Gemini · Aurora theme");
-    expect(output).toContain("✓ Inspected 12 staged files");
-    expect(output).toContain("✓ Loaded 5 recent commit subjects");
-    expect(output).toContain("✓ Analyzed changes with Gemini");
+    expect(output).toContain(
+      "✓ 12 staged files · 5 recent subjects · Analyzed with Gemini",
+    );
     expect(output).toContain("4.2s");
     expect(output).toContain(
       "❯ ★ feat(cli): add interactive terminal interface",
@@ -140,13 +142,19 @@ describe("interactive suggestion TUI", () => {
     expect(output).toContain(
       "refactor(ui): introduce reusable terminal views",
     );
-    expect(output).toContain("Preview");
+    expect(output).toContain("Details for underlined commit");
     expect(output).toContain(
       "• Render progress and suggestions using reusable components.",
     );
     expect(output).toContain(
-      "[ Accept ] [ Custom ] [ Cancel ] · ↑↓/JK navigate",
+      "[Enter Use #1] [C Write custom] [Esc Cancel]",
     );
+    expect(output).toContain(
+      "↑↓ or J/K move · active commit is underlined",
+    );
+    expect(output).not.toContain("SELECTED");
+    expect(output).not.toContain("scroll");
+    expect(output).not.toContain("Selected #");
   });
 
   it("renders an animated analysis state before suggestions arrive", () => {
@@ -166,10 +174,41 @@ describe("interactive suggestion TUI", () => {
       { columns: 68 },
     );
 
-    expect(output).toContain("✶ Analyzing changes with Ollama…");
+    expect(output).toContain("✶ Analyzing 3 staged files with Ollama…");
     expect(output).toContain("1.6s");
     expect(output).not.toContain("Suggested commit");
     expect(output).not.toContain("Preview");
+  });
+
+  it("wraps long commit subjects without replacing text with dots", () => {
+    const longDescription =
+      "keep interactive command sessions alive through every final prompt";
+    const output = renderToString(
+      <SuggestionScreen
+        analysis={{
+          ...analysis,
+          suggestions: analysis.suggestions.map((suggestion, index) =>
+            index === 1
+              ? { ...suggestion, description: longDescription }
+              : suggestion,
+          ),
+        }}
+        colorsEnabled={false}
+        elapsedSeconds={1}
+        fileCount={4}
+        frameIndex={0}
+        loading={false}
+        providerName="Gemini"
+        recentCommitCount={5}
+        selectedPosition={0}
+        themeName="aurora"
+        width={52}
+      />,
+      { columns: 52 },
+    );
+
+    expect(output).toContain("every final prompt");
+    expect(output).not.toContain("prompt…");
   });
 
   it("orders the recommendation first without changing source indexes", () => {
@@ -216,9 +255,48 @@ describe("interactive suggestion TUI", () => {
     ).toBe("previous");
     expect(resolveSuggestionInput("j", keyboardEvent())).toBe("next");
     expect(resolveSuggestionInput("k", keyboardEvent())).toBe("previous");
+    expect(
+      resolveSuggestionInput("", keyboardEvent({ pageDown: true })),
+    ).toBeUndefined();
+    expect(
+      resolveSuggestionInput("", keyboardEvent({ pageUp: true })),
+    ).toBeUndefined();
+    expect(resolveSuggestionInput("c", keyboardEvent())).toBe("custom");
+    expect(
+      resolveSuggestionInput("", keyboardEvent({ escape: true })),
+    ).toBe("cancel");
   });
 
-  it("parses terminal mouse clicks, releases, and wheel navigation", () => {
+  it("renders a fixed layout without scroll chrome or shifting selection text", () => {
+    const output = renderToString(
+      <SuggestionScreen
+        analysis={analysis}
+        colorsEnabled={false}
+        elapsedSeconds={4.2}
+        fileCount={12}
+        frameIndex={0}
+        loading={false}
+        providerName="Gemini"
+        recentCommitCount={5}
+        selectedPosition={1}
+        themeName="aurora"
+        width={72}
+      />,
+      { columns: 72 },
+    );
+
+    expect(output).toContain(
+      "❯   refactor(ui): introduce reusable terminal views",
+    );
+    expect(output).toContain(
+      "[Enter Use #2] [C Write custom] [Esc Cancel]",
+    );
+    expect(output).not.toContain("SELECTED");
+    expect(output).not.toContain("Scroll");
+    expect(output).not.toContain("Top");
+  });
+
+  it("parses terminal clicks and ignores mouse-wheel scrolling", () => {
     expect(parseTerminalMouseInput("[<0;14;11M")).toEqual({
       button: "left",
       pressed: true,
@@ -231,14 +309,8 @@ describe("interactive suggestion TUI", () => {
       x: 14,
       y: 11,
     });
-    expect(parseTerminalMouseInput("[<64;4;8M")).toMatchObject({
-      button: "wheel-up",
-      pressed: true,
-    });
-    expect(parseTerminalMouseInput("[<65;4;8M")).toMatchObject({
-      button: "wheel-down",
-      pressed: true,
-    });
+    expect(parseTerminalMouseInput("[<64;4;8M")).toBeUndefined();
+    expect(parseTerminalMouseInput("[<65;4;8M")).toBeUndefined();
   });
 
   it("navigates and accepts through a live terminal input stream", async () => {
@@ -283,7 +355,7 @@ describe("interactive suggestion TUI", () => {
     }
   });
 
-  it("selects and accepts a suggestion through live mouse clicks", async () => {
+  it("accepts the selected suggestion through a live mouse click", async () => {
     const stdin = terminalInput();
     const stdout = terminalOutput();
     const instance = render(
@@ -309,15 +381,13 @@ describe("interactive suggestion TUI", () => {
     try {
       await instance.waitUntilRenderFlush();
       await instance.waitUntilRenderFlush();
-      stdin.push("\u001B[<0;5;12M");
-      await instance.waitUntilRenderFlush();
-      stdin.push("\u001B[<0;5;12M");
+      stdin.push("\u001B[<0;5;11M");
 
       await expect(
         waitForInteractiveResult(instance.waitUntilExit()),
       ).resolves.toEqual({
         kind: "suggestion",
-        suggestionIndex: 0,
+        suggestionIndex: 1,
       });
     } finally {
       instance.cleanup();

@@ -137,7 +137,7 @@ The shared Zod schema requires:
 - An optional, non-empty split reason.
 - A zero-based recommended-suggestion index that references an available
   suggestion.
-- Between one and three commit suggestions.
+- Exactly three distinct commit suggestions for comparison.
 
 Each suggestion requires:
 

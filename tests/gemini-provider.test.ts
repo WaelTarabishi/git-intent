@@ -50,6 +50,26 @@ const validCommitAnalysis = {
       explanation: "The staged diff adds a Gemini provider.",
       confidence: 0.95,
     },
+    {
+      type: "refactor",
+      scope: "providers",
+      description: "integrate Gemini analysis adapter",
+      details: ["Translate staged changes through the Gemini adapter."],
+      tests: [],
+      breakingChanges: [],
+      explanation: "A provider-architecture alternative.",
+      confidence: 0.82,
+    },
+    {
+      type: "test",
+      scope: "providers",
+      description: "cover Gemini commit analysis",
+      details: ["Exercise structured Gemini analysis responses."],
+      tests: ["Validate Gemini provider responses."],
+      breakingChanges: [],
+      explanation: "A test-oriented alternative.",
+      confidence: 0.74,
+    },
   ],
 };
 

@@ -77,6 +77,24 @@ describe("suggest command integration", () => {
                 explanation: "The staged file introduces a feature flag.",
                 confidence: 0.95,
               },
+              {
+                type: "refactor",
+                description: "expose feature flag state",
+                details: ["Organize the exported feature flag state."],
+                tests: [],
+                breakingChanges: [],
+                explanation: "A structure-focused alternative.",
+                confidence: 0.8,
+              },
+              {
+                type: "test",
+                description: "cover feature flag export",
+                details: ["Exercise the enabled feature flag export."],
+                tests: [],
+                breakingChanges: [],
+                explanation: "A test-focused alternative.",
+                confidence: 0.7,
+              },
             ],
           }),
         }),
@@ -123,7 +141,7 @@ describe("suggest command integration", () => {
       summary: "The staged change adds a feature flag.",
       splitRecommended: false,
     });
-    expect(response.suggestions).toHaveLength(1);
+    expect(response.suggestions).toHaveLength(3);
     expect(after).toEqual(before);
     expect(after.historyCount).toBe("0");
   });

@@ -55,6 +55,7 @@ import {
   type TerminalTheme,
   type ThemeName,
 } from "./ui/theme.js";
+import { waitForInteractiveResult } from "./ui/interaction-lifecycle.js";
 
 interface InspectOptions {
   json?: boolean;
@@ -743,9 +744,22 @@ export function createProgram(
   return program;
 }
 
+export async function waitForCliRun<T>(
+  cliPromise: Promise<T>,
+  interactive: boolean,
+): Promise<T> {
+  if (interactive) {
+    return waitForInteractiveResult(cliPromise);
+  }
+  return cliPromise;
+}
+
 export async function runCli(argv = process.argv): Promise<void> {
   loadProjectEnvironment();
-  await createProgram().parseAsync(argv);
+  await waitForCliRun(
+    createProgram().parseAsync(argv),
+    process.stdin.isTTY === true && process.stdout.isTTY === true,
+  );
 }
 
 function resolveEntryPath(filePath: string): string {

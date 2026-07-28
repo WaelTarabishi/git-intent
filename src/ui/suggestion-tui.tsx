@@ -22,7 +22,10 @@ import type {
   CommitAnalysis,
   CommitSuggestion,
 } from "../analysis/commit-analysis-schema.js";
+import { waitForInteractiveResult } from "./interaction-lifecycle.js";
 import type { ThemeName } from "./theme.js";
+
+export { waitForInteractiveResult } from "./interaction-lifecycle.js";
 
 const spinnerFrames = ["✻", "✽", "✶", "✳", "✢", "✣"] as const;
 const enableMouseTracking = "\u001B[?1000h\u001B[?1006h";
@@ -178,15 +181,17 @@ interface CommitSubjectProps {
   suggestion: CommitSuggestion;
   palette: TuiPalette;
   colorsEnabled: boolean;
+  underline?: boolean | undefined;
 }
 
 function CommitSubject({
   suggestion,
   palette,
   colorsEnabled,
+  underline = false,
 }: CommitSubjectProps) {
   return (
-    <Text wrap="truncate-end">
+    <Text wrap="wrap" underline={underline}>
       <Tone
         palette={palette}
         colorsEnabled={colorsEnabled}
@@ -259,9 +264,25 @@ export function SuggestionScreen({
     selectedIndex === undefined
       ? undefined
       : analysis?.suggestions[selectedIndex];
+  const visibleDetails = selectedSuggestion?.details.slice(0, 3) ?? [];
+  const visibleTests = selectedSuggestion?.tests.slice(0, 2) ?? [];
+  const visibleBreakingChanges =
+    selectedSuggestion?.breakingChanges.slice(0, 1) ?? [];
+  const hiddenPreviewItems =
+    selectedSuggestion === undefined
+      ? 0
+      : selectedSuggestion.details.length -
+        visibleDetails.length +
+        (selectedSuggestion.tests.length - visibleTests.length) +
+        (selectedSuggestion.breakingChanges.length -
+          visibleBreakingChanges.length);
 
   return (
-    <Box width={width} flexDirection="column">
+    <Box
+      width={width}
+      flexDirection="column"
+      flexShrink={0}
+    >
       <Box
         width="100%"
         borderStyle="round"
@@ -286,33 +307,6 @@ export function SuggestionScreen({
         </Tone>
       </Box>
 
-      <Box marginTop={1} paddingX={2}>
-        <Tone
-          palette={palette}
-          colorsEnabled={colorsEnabled}
-          role="success"
-        >
-          ✓
-        </Tone>
-        <Text> Inspected {fileCount} staged files</Text>
-      </Box>
-      <Box paddingX={2}>
-        <Tone
-          palette={palette}
-          colorsEnabled={colorsEnabled}
-          role="success"
-        >
-          ✓
-        </Tone>
-        <Text>
-          {" "}
-          {recentCommitCount === 0
-            ? "Loaded repository context"
-            : `Loaded ${recentCommitCount} recent commit ${
-                recentCommitCount === 1 ? "subject" : "subjects"
-              }`}
-        </Text>
-      </Box>
       <Box paddingX={2}>
         <Box flexGrow={1}>
           <Tone
@@ -326,8 +320,15 @@ export function SuggestionScreen({
           </Tone>
           <Text>
             {" "}
-            {loading ? "Analyzing" : "Analyzed"} changes with {providerName}
-            {loading ? "…" : ""}
+            {loading
+              ? `Analyzing ${fileCount} staged ${
+                  fileCount === 1 ? "file" : "files"
+                } with ${providerName}…`
+              : `${fileCount} staged ${
+                  fileCount === 1 ? "file" : "files"
+                } · ${recentCommitCount} recent ${
+                  recentCommitCount === 1 ? "subject" : "subjects"
+                } · Analyzed with ${providerName}`}
           </Text>
         </Box>
         <Tone
@@ -367,7 +368,7 @@ export function SuggestionScreen({
             </Tone>
           </Box>
 
-          <Box flexDirection="column" marginTop={1}>
+          <Box flexDirection="column">
             {orderedIndexes.map((suggestionIndex, position) => {
               const suggestion = analysis.suggestions[suggestionIndex]!;
               const selected = position === selectedPosition;
@@ -401,6 +402,7 @@ export function SuggestionScreen({
                       suggestion={suggestion}
                       palette={palette}
                       colorsEnabled={colorsEnabled}
+                      underline={selected}
                     />
                   </Box>
                   <Box width={5} justifyContent="flex-end">
@@ -423,6 +425,48 @@ export function SuggestionScreen({
             })}
           </Box>
 
+          <Box marginTop={1} paddingX={2} flexDirection="column">
+            <Box gap={1}>
+              <Box ref={interactionRefs?.accept}>
+                <Tone
+                  palette={palette}
+                  colorsEnabled={colorsEnabled}
+                  role="success"
+                  bold
+                >
+                  [Enter Use #{selectedPosition + 1}]
+                </Tone>
+              </Box>
+              <Box ref={interactionRefs?.custom}>
+                <Tone
+                  palette={palette}
+                  colorsEnabled={colorsEnabled}
+                  role="accent"
+                  bold
+                >
+                  [C Write custom]
+                </Tone>
+              </Box>
+              <Box ref={interactionRefs?.cancel}>
+                <Tone
+                  palette={palette}
+                  colorsEnabled={colorsEnabled}
+                  role="danger"
+                  bold
+                >
+                  [Esc Cancel]
+                </Tone>
+              </Box>
+            </Box>
+            <Tone
+              palette={palette}
+              colorsEnabled={colorsEnabled}
+              role="muted"
+            >
+              ↑↓ or J/K move · active commit is underlined
+            </Tone>
+          </Box>
+
           {selectedSuggestion === undefined ? null : (
             <Box
               marginTop={1}
@@ -438,15 +482,9 @@ export function SuggestionScreen({
                 role="heading"
                 bold
               >
-                Preview
+                Details for underlined commit
               </Tone>
-              <CommitSubject
-                suggestion={selectedSuggestion}
-                palette={palette}
-                colorsEnabled={colorsEnabled}
-              />
-              <Box height={1} />
-              {selectedSuggestion.details.map((detail) => (
+              {visibleDetails.map((detail) => (
                 <Box key={detail}>
                   <Tone
                     palette={palette}
@@ -458,7 +496,7 @@ export function SuggestionScreen({
                   <Text> {detail}</Text>
                 </Box>
               ))}
-              {selectedSuggestion.tests.map((test) => (
+              {visibleTests.map((test) => (
                 <Box key={test}>
                   <Tone
                     palette={palette}
@@ -470,7 +508,7 @@ export function SuggestionScreen({
                   <Text> {test}</Text>
                 </Box>
               ))}
-              {selectedSuggestion.breakingChanges.map((breakingChange) => (
+              {visibleBreakingChanges.map((breakingChange) => (
                 <Box key={breakingChange}>
                   <Tone
                     palette={palette}
@@ -482,46 +520,19 @@ export function SuggestionScreen({
                   <Text> {breakingChange}</Text>
                 </Box>
               ))}
+              {hiddenPreviewItems > 0 ? (
+                <Tone
+                  palette={palette}
+                  colorsEnabled={colorsEnabled}
+                  role="muted"
+                >
+                  + {hiddenPreviewItems} more{" "}
+                  {hiddenPreviewItems === 1 ? "item" : "items"} included
+                </Tone>
+              ) : null}
             </Box>
           )}
 
-          <Box marginTop={1} paddingX={2} gap={1}>
-            <Box ref={interactionRefs?.accept}>
-              <Tone
-                palette={palette}
-                colorsEnabled={colorsEnabled}
-                role="success"
-                bold
-              >
-                [ Accept ]
-              </Tone>
-            </Box>
-            <Box ref={interactionRefs?.custom}>
-              <Tone
-                palette={palette}
-                colorsEnabled={colorsEnabled}
-                role="accent"
-              >
-                [ Custom ]
-              </Tone>
-            </Box>
-            <Box ref={interactionRefs?.cancel}>
-              <Tone
-                palette={palette}
-                colorsEnabled={colorsEnabled}
-                role="danger"
-              >
-                [ Cancel ]
-              </Tone>
-            </Box>
-            <Tone
-              palette={palette}
-              colorsEnabled={colorsEnabled}
-              role="muted"
-            >
-              · ↑↓/JK navigate
-            </Tone>
-          </Box>
         </>
       )}
     </Box>
@@ -561,7 +572,7 @@ export type SuggestionInputAction =
   | "previous";
 
 export interface TerminalMouseEvent {
-  button: "left" | "wheel-down" | "wheel-up";
+  button: "left";
   pressed: boolean;
   x: number;
   y: number;
@@ -583,16 +594,7 @@ export function parseTerminalMouseInput(
     return undefined;
   }
 
-  if ((buttonCode & 64) !== 0) {
-    return {
-      button: (buttonCode & 1) === 0 ? "wheel-up" : "wheel-down",
-      pressed: match[4] === "M",
-      x,
-      y,
-    };
-  }
-
-  if ((buttonCode & 3) !== 0) {
+  if ((buttonCode & 64) !== 0 || (buttonCode & 3) !== 0) {
     return undefined;
   }
   return {
@@ -618,7 +620,6 @@ export function resolveSuggestionInput(
   if (
     key.downArrow ||
     key.rightArrow ||
-    key.pageDown ||
     normalizedInput === "j"
   ) {
     return "next";
@@ -626,7 +627,6 @@ export function resolveSuggestionInput(
   if (
     key.upArrow ||
     key.leftArrow ||
-    key.pageUp ||
     normalizedInput === "k"
   ) {
     return "previous";
@@ -672,12 +672,19 @@ function elementContainsMouseEvent(
 export function SuggestionTuiController(options: SuggestionTuiOptions) {
   const { exit } = useApp();
   const { stdout } = useStdout();
-  const interactionRefs: SuggestionInteractionRefs = {
-    accept: useRef<DOMElement>(null),
-    cancel: useRef<DOMElement>(null),
-    custom: useRef<DOMElement>(null),
-    suggestions: useRef<Array<DOMElement | null>>([]),
-  };
+  const acceptRef = useRef<DOMElement>(null);
+  const cancelRef = useRef<DOMElement>(null);
+  const customRef = useRef<DOMElement>(null);
+  const suggestionsRef = useRef<Array<DOMElement | null>>([]);
+  const interactionRefs = useMemo<SuggestionInteractionRefs>(
+    () => ({
+      accept: acceptRef,
+      cancel: cancelRef,
+      custom: customRef,
+      suggestions: suggestionsRef,
+    }),
+    [],
+  );
   const [analysis, setAnalysis] = useState<CommitAnalysis>();
   const [selectedPosition, setSelectedPosition] = useState(0);
   const [frameIndex, setFrameIndex] = useState(0);
@@ -686,7 +693,6 @@ export function SuggestionTuiController(options: SuggestionTuiOptions) {
     () => (analysis === undefined ? [] : orderedSuggestionIndexes(analysis)),
     [analysis],
   );
-
   useEffect(() => {
     let active = true;
     void options.analysisPromise.then(
@@ -741,20 +747,6 @@ export function SuggestionTuiController(options: SuggestionTuiOptions) {
     const mouseEvent = parseTerminalMouseInput(input);
     if (mouseEvent !== undefined) {
       if (analysis === undefined || !mouseEvent.pressed) {
-        return;
-      }
-      if (mouseEvent.button === "wheel-down") {
-        setSelectedPosition(
-          (current) => (current + 1) % orderedIndexes.length,
-        );
-        return;
-      }
-      if (mouseEvent.button === "wheel-up") {
-        setSelectedPosition(
-          (current) =>
-            (current - 1 + orderedIndexes.length) %
-            orderedIndexes.length,
-        );
         return;
       }
       if (
@@ -855,7 +847,7 @@ export function SuggestionTuiController(options: SuggestionTuiOptions) {
     }
   });
 
-  const terminalWidth = stdout.columns ?? 80;
+  const terminalWidth = stdout.columns || 80;
   const width = Math.max(36, Math.min(80, terminalWidth));
 
   return (
@@ -883,27 +875,13 @@ function isSuggestionTuiResult(value: unknown): value is SuggestionTuiResult {
   return value.kind === "custom" || value.kind === "suggestion";
 }
 
-export async function waitForInteractiveResult<T>(
-  resultPromise: Promise<T>,
-): Promise<T> {
-  // Some Windows terminal hosts do not keep Node alive through the raw stdin
-  // handle after the analysis animation stops. A quiet referenced timer avoids
-  // process.beforeExit unmounting Ink before the developer presses a key.
-  const keepAlive = setInterval(() => undefined, 60_000);
-  try {
-    return await resultPromise;
-  } finally {
-    clearInterval(keepAlive);
-  }
-}
-
 export async function runSuggestionTui(
   options: SuggestionTuiOptions,
 ): Promise<SuggestionTuiResult> {
   const instance = render(<SuggestionTuiController {...options} />, {
     alternateScreen: true,
     exitOnCtrlC: false,
-    incrementalRendering: false,
+    incrementalRendering: true,
     maxFps: 30,
   });
 
