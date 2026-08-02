@@ -859,7 +859,9 @@ export async function runSuggestionTui(
   const instance = render(<SuggestionTuiController {...options} />, {
     alternateScreen: true,
     exitOnCtrlC: false,
-    incrementalRendering: true,
+    // Selection styling can change the height of a wrapped row. Full-frame
+    // redraws prevent stale subjects and action rows in Windows terminals.
+    incrementalRendering: false,
     maxFps: 30,
   });
 

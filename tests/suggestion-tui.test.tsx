@@ -259,6 +259,8 @@ describe("interactive suggestion TUI", () => {
     );
 
     expect(output).toContain("every final prompt");
+    expect(output.match(/every final prompt/gu)).toHaveLength(1);
+    expect(output.match(/\[Enter Use #1\]/gu)).toHaveLength(1);
     expect(output).not.toContain("prompt…");
   });
 
