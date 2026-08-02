@@ -262,6 +262,40 @@ describe("GeminiProvider", () => {
     expect(httpClient).not.toHaveBeenCalled();
   });
 
+  it("applies the diff limit after generated lockfiles are compacted", async () => {
+    const lockfileMarker = `+${"generated-lock-data".repeat(100)}`;
+    const largeLockfileChanges: ValidatedStagedChangeAnalysis = {
+      ...stagedChanges,
+      files: [
+        { path: "package-lock.json", status: "modified", binary: false },
+      ],
+      diff: [
+        "diff --git a/package-lock.json b/package-lock.json",
+        "--- a/package-lock.json",
+        "+++ b/package-lock.json",
+        lockfileMarker,
+      ].join("\n"),
+    };
+    const httpClient = vi.fn<GeminiHttpClient>(async () =>
+      geminiResponse(JSON.stringify(validCommitAnalysis)),
+    );
+    const provider = new GeminiProvider({
+      apiKey: "test-key",
+      maxDiffCharacters: 200,
+      httpClient,
+      environment: {},
+    });
+
+    await expect(
+      provider.analyze({ stagedChanges: largeLockfileChanges }),
+    ).resolves.toEqual(validCommitAnalysis);
+
+    const body = JSON.parse(
+      String(httpClient.mock.calls[0]?.[1]?.body),
+    ) as { contents: Array<{ parts: Array<{ text: string }> }> };
+    expect(body.contents[0]?.parts[0]?.text).not.toContain(lockfileMarker);
+  });
+
   it("warns that staged content is sent to the cloud and flags sensitive files", async () => {
     const onWarning = vi.fn();
     const provider = new GeminiProvider({

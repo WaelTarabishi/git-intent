@@ -112,5 +112,8 @@ describe("buildCommitAnalysisPrompt", () => {
     expect(result.prompt).not.toContain("lockfileVersion: '9.0'");
     expect(result.prompt).not.toContain('"version": "1.1.0"');
     expect(result.prompt).toContain("+export const ready = true;");
+    expect(result.transmittedDiffCharacters).toBeLessThan(
+      mixedLockfiles.diff.length,
+    );
   });
 });

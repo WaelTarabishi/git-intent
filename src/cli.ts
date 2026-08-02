@@ -758,6 +758,10 @@ export function createProgram(
       const commitAnalysisPromise = provider
         .analyze({ stagedChanges })
         .then((analysis) => validateCommitAnalysis(analysis));
+      // Ink subscribes to this promise from an effect. Providers can reject
+      // before that effect runs (for example, on an oversized diff), so attach
+      // a handler immediately while preserving the rejection for the UI/CLI.
+      void commitAnalysisPromise.catch(() => undefined);
 
       if (options.json === true) {
         const commitAnalysis = await commitAnalysisPromise;

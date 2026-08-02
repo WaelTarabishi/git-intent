@@ -93,14 +93,16 @@ then default. The API key must always come from `GEMINI_API_KEY` or
 ## Privacy boundary
 
 Gemini is an explicitly selected cloud provider. A request contains changed
-filenames, up to five recent commit subjects, and the complete staged diff. Git
+filenames, up to five recent commit subjects, and the staged diff. Generated
+dependency-lockfile bodies are replaced with addition/deletion summaries. Git
 Intent emits a cloud disclosure before sending and an additional warning for
 recognizable sensitive filenames. Warnings go to standard error so `--json`
 standard output remains valid JSON.
 
 The filename check is heuristic and does not redact content. Review the staged
-diff yourself before using Gemini. Requests larger than 100,000 diff characters
-are rejected before network communication.
+diff yourself before using Gemini. After lockfile compaction, requests with more
+than 100,000 remaining diff characters are rejected before network
+communication.
 
 ## Errors
 

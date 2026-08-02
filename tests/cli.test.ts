@@ -676,6 +676,41 @@ describe("suggest command", () => {
     );
   });
 
+  it("reports provider failures that occur while the TUI initializes", async () => {
+    const errors: string[] = [];
+    const setExitCode = vi.fn();
+    const providerError = new Error("The staged diff is too large.");
+    const runSuggestionTui = vi.fn(async (options) => {
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await options.analysisPromise;
+      throw new Error("analysisPromise should reject");
+    });
+
+    await createProgram({
+      inspectStagedChanges: async () => stagedChanges,
+      isInteractiveTerminal: () => true,
+      resolveProvider: () => ({
+        id: "gemini",
+        analyze: async () => {
+          throw providerError;
+        },
+      }),
+      runSuggestionTui,
+      writeError: (value) => errors.push(value),
+      setExitCode,
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "suggest",
+      "--provider",
+      "gemini",
+      "--no-color",
+    ]);
+
+    expect(errors.join("")).toContain("Error: The staged diff is too large.");
+    expect(setExitCode).toHaveBeenCalledWith(1);
+  });
+
   it("puts the recommendation first and previews only the selected detailed message", async () => {
     const output: string[] = [];
     const threeSuggestions = {

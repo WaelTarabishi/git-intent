@@ -122,11 +122,13 @@ export class OllamaProvider implements CommitAnalysisProvider {
   async analyze({
     stagedChanges,
   }: CommitAnalysisRequest): Promise<CommitAnalysis> {
+    const prompt = buildCommitAnalysisPrompt(stagedChanges);
     if (
-      stagedChanges.diff.length > this.configuration.maxDiffCharacters
+      prompt.transmittedDiffCharacters >
+      this.configuration.maxDiffCharacters
     ) {
       throw new OllamaDiffTooLargeError(
-        stagedChanges.diff.length,
+        prompt.transmittedDiffCharacters,
         this.configuration.maxDiffCharacters,
       );
     }
@@ -136,7 +138,6 @@ export class OllamaProvider implements CommitAnalysisProvider {
       this.onWarning(formatSensitiveFileWarning(sensitiveFiles));
     }
 
-    const prompt = buildCommitAnalysisPrompt(stagedChanges);
     const controller = new AbortController();
     const timeout = setTimeout(
       () => controller.abort(),

@@ -327,9 +327,11 @@ The CLI contains no provider HTTP or response-parsing logic.
 ## Privacy and safety limitations
 
 Both providers send changed filenames, up to five recent commit subjects, and
-the complete staged diff to their configured endpoints. The request is rejected
-when the diff exceeds 100,000 characters; Git Intent does not silently truncate
-it. Stage fewer related changes before retrying.
+the staged diff to their configured endpoints. Generated dependency-lockfile
+bodies are replaced with addition/deletion summaries before sending so they do
+not dominate the analysis. The remaining diff is rejected when it exceeds
+100,000 characters; Git Intent does not silently truncate source changes. Stage
+fewer related changes before retrying.
 
 Recognizable `.env`, private-key, credential, Terraform state, and secret
 manifest filenames produce a warning but are not automatically blocked.

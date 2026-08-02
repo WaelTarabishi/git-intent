@@ -231,6 +231,39 @@ describe("OllamaProvider", () => {
     expect(httpClient).not.toHaveBeenCalled();
   });
 
+  it("applies the diff limit after generated lockfiles are compacted", async () => {
+    const lockfileMarker = `+${"generated-lock-data".repeat(100)}`;
+    const largeLockfileChanges: ValidatedStagedChangeAnalysis = {
+      ...stagedChanges,
+      files: [
+        { path: "package-lock.json", status: "modified", binary: false },
+      ],
+      diff: [
+        "diff --git a/package-lock.json b/package-lock.json",
+        "--- a/package-lock.json",
+        "+++ b/package-lock.json",
+        lockfileMarker,
+      ].join("\n"),
+    };
+    const httpClient = vi.fn<OllamaHttpClient>(async () =>
+      ollamaResponse(JSON.stringify(validCommitAnalysis)),
+    );
+    const provider = new OllamaProvider({
+      maxDiffCharacters: 200,
+      httpClient,
+      environment: {},
+    });
+
+    await expect(
+      provider.analyze({ stagedChanges: largeLockfileChanges }),
+    ).resolves.toEqual(validCommitAnalysis);
+
+    const body = JSON.parse(
+      String(httpClient.mock.calls[0]?.[1]?.body),
+    ) as { prompt: string };
+    expect(body.prompt).not.toContain(lockfileMarker);
+  });
+
   it("warns about sensitive filenames while still using local analysis", async () => {
     const onWarning = vi.fn();
     const provider = new OllamaProvider({

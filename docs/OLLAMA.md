@@ -100,7 +100,8 @@ still parsed as untrusted JSON and independently validated with Zod.
 The prompt includes:
 
 - Changed filenames, statuses, rename context, and binary markers.
-- The complete staged diff.
+- The staged diff, with generated dependency-lockfile bodies replaced by
+  addition/deletion summaries.
 - Up to five recent commit subjects when Git history is available.
 - Conventional Commit rules and one-to-three-suggestion limits.
 - Split guidance for unrelated concerns.
@@ -115,9 +116,10 @@ downloadable.
 Known Ollama cloud-model names and direct `ollama.com` API endpoints are
 rejected. Git Intent does not read Ollama or cloud API keys.
 
-The staged diff is limited to 100,000 characters. Oversized input is rejected
-before any HTTP request and is never silently truncated. Stage fewer related
-changes and retry.
+After generated lockfiles are compacted, the remaining staged diff is limited
+to 100,000 characters. Oversized input is rejected before any HTTP request, and
+source changes are never silently truncated. Stage fewer related changes and
+retry.
 
 Sensitive-looking filenames generate a warning for `.env` files, private keys,
 credential files, Terraform state, and secret manifests. The local provider
