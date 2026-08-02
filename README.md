@@ -68,9 +68,9 @@ active subject is underlined, and every row keeps the same width while the
 selection moves. With the keyboard, use `↑` and `↓` to navigate (`J` and `K`
 also work), `Enter` to accept, `C` to write a custom message, and `Esc` or
 `Ctrl+C` to cancel. The selection screen does not scroll. Long subjects wrap
-without losing text, and the details panel shows every generated implementation
-detail, test note, and breaking change. Disable motion while keeping the
-interactive screen with `--no-animation`:
+without losing text, mouse-wheel input is ignored, and the details panel shows
+every generated implementation detail, test note, and breaking change. Disable
+motion while keeping the interactive screen with `--no-animation`:
 
 ```sh
 git-intent suggest --no-animation

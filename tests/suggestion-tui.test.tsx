@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommitAnalysis } from "../src/analysis/commit-analysis-schema.js";
 import {
   formatElapsedTime,
+  isTerminalMouseInput,
   orderedSuggestionIndexes,
   parseTerminalMouseInput,
   resolveSuggestionInput,
@@ -364,6 +365,50 @@ describe("interactive suggestion TUI", () => {
     });
     expect(parseTerminalMouseInput("[<64;4;8M")).toBeUndefined();
     expect(parseTerminalMouseInput("[<65;4;8M")).toBeUndefined();
+    expect(isTerminalMouseInput("[<64;4;8M")).toBe(true);
+    expect(isTerminalMouseInput("\u001B[<65;4;8M")).toBe(true);
+    expect(isTerminalMouseInput("\u001B[B")).toBe(false);
+  });
+
+  it("does not change the selection when the mouse wheel is used", async () => {
+    const stdin = terminalInput();
+    const stdout = terminalOutput();
+    const instance = render(
+      <SuggestionTuiController
+        analysisPromise={Promise.resolve(analysis)}
+        animation={false}
+        colorsEnabled={false}
+        fileCount={1}
+        providerName="Gemini"
+        recentCommitCount={0}
+        startedAtMs={Date.now()}
+        themeName="aurora"
+      />,
+      {
+        exitOnCtrlC: false,
+        interactive: true,
+        patchConsole: false,
+        stdin,
+        stdout,
+      },
+    );
+
+    try {
+      await instance.waitUntilRenderFlush();
+      await instance.waitUntilRenderFlush();
+      stdin.push("\u001B[<65;4;8M");
+      await instance.waitUntilRenderFlush();
+      stdin.push("\n");
+
+      await expect(
+        waitForInteractiveResult(instance.waitUntilExit()),
+      ).resolves.toEqual({
+        kind: "suggestion",
+        suggestionIndex: 1,
+      });
+    } finally {
+      instance.cleanup();
+    }
   });
 
   it("navigates and accepts through a live terminal input stream", async () => {

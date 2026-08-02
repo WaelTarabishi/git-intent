@@ -556,11 +556,17 @@ export interface TerminalMouseEvent {
   y: number;
 }
 
+const terminalMouseInputPattern =
+  /^(?:\u001B)?\[<(\d+);(\d+);(\d+)([Mm])$/u;
+
+export function isTerminalMouseInput(input: string): boolean {
+  return terminalMouseInputPattern.test(input);
+}
+
 export function parseTerminalMouseInput(
   input: string,
 ): TerminalMouseEvent | undefined {
-  const match =
-    /^(?:\u001B)?\[<(\d+);(\d+);(\d+)([Mm])$/u.exec(input);
+  const match = terminalMouseInputPattern.exec(input);
   if (match === null) {
     return undefined;
   }
@@ -778,6 +784,11 @@ export function SuggestionTuiController(options: SuggestionTuiOptions) {
         }
         setSelectedPosition(clickedPosition);
       }
+      return;
+    }
+    // Wheel and unsupported mouse-button events must not fall through to
+    // Ink's keyboard interpretation, where they may look like arrow keys.
+    if (isTerminalMouseInput(input)) {
       return;
     }
 
