@@ -22,6 +22,13 @@ For local analysis, install Ollama and see [docs/OLLAMA.md](docs/OLLAMA.md).
 For cloud analysis, create a Gemini API key and see
 [docs/GEMINI.md](docs/GEMINI.md). Neither provider is required for `inspect`.
 
+Gemini users can run the built-in one-time setup from any directory. The input
+is masked and the saved key is automatically available to every project:
+
+```sh
+git-intent config set-gemini-key
+```
+
 ## Development commands
 
 ```sh
@@ -193,8 +200,20 @@ the process through `GEMINI_API_KEY`. `GOOGLE_API_KEY` is also supported and
 takes precedence when both variables are set. Do not pass keys on the command
 line or commit them to Git.
 
-The CLI automatically loads a `.env` file from the directory where you run it.
-Copy the included example and replace the placeholder:
+The recommended one-time setup works across all projects and masks the key as
+you type:
+
+```sh
+git-intent config set-gemini-key
+```
+
+This saves the key in `~/.git-intent/.env` with owner-only file permissions
+where the operating system supports them. The CLI automatically loads that
+file on startup.
+
+For project-specific configuration, the CLI also loads `.env` from the
+directory where it is run. Copy the included example and replace the
+placeholder:
 
 ```powershell
 Copy-Item .env.example .env
@@ -204,8 +223,9 @@ Copy-Item .env.example .env
 GEMINI_API_KEY=your-api-key
 ```
 
-`.env` is already ignored by Git. A variable set by the shell takes precedence
-over the value in the file.
+`.env` is already ignored by Git. Configuration precedence is an environment
+variable already set by the shell, the current project's `.env`, then the
+user-wide `~/.git-intent/.env` file.
 
 The default model is `gemini-3.6-flash`, and the default timeout is 120 seconds.
 

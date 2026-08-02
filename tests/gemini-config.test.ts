@@ -52,7 +52,7 @@ describe("resolveGeminiConfiguration", () => {
 
   it("rejects missing credentials without including a key value", () => {
     expect(() => resolveGeminiConfiguration({}, {})).toThrow(
-      "Set GEMINI_API_KEY (or GOOGLE_API_KEY)",
+      "git-intent config set-gemini-key",
     );
   });
 

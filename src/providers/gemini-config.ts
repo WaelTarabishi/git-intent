@@ -98,7 +98,7 @@ export function resolveGeminiConfiguration(
     nonEmptyValue(environment.GEMINI_API_KEY);
   if (apiKey === undefined) {
     throw new Error(
-      "Gemini API key is missing. Set GEMINI_API_KEY (or GOOGLE_API_KEY) and try again.",
+      "Gemini API key is missing. Run `git-intent config set-gemini-key` to save one for all projects, or set GEMINI_API_KEY (or GOOGLE_API_KEY), then try again.",
     );
   }
 

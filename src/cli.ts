@@ -3,6 +3,7 @@
 import {
   confirm as confirmPrompt,
   input as inputPrompt,
+  password as passwordPrompt,
   select as selectPrompt,
 } from "@inquirer/prompts";
 import { Command, InvalidArgumentError, Option } from "commander";
@@ -18,7 +19,10 @@ import {
   validateStagedChangeAnalysis,
   type ValidatedStagedChangeAnalysis,
 } from "./analysis/analysis-schema.js";
-import { loadProjectEnvironment } from "./config/environment.js";
+import {
+  loadGitIntentEnvironment,
+  saveGlobalGeminiApiKey,
+} from "./config/environment.js";
 import {
   DetachedHeadError,
   GitService,
@@ -111,6 +115,12 @@ export interface CliDependencies {
     message: string;
     validate(value: string): boolean | string;
   }): Promise<string>;
+  password(options: {
+    message: string;
+    mask?: boolean | string;
+    validate(value: string): boolean | string;
+  }): Promise<string>;
+  saveGeminiApiKey(apiKey: string): Promise<string>;
   writeOutput(value: string): void;
   writeError(value: string): void;
   setExitCode(value: number): void;
@@ -135,6 +145,8 @@ const defaultDependencies: CliDependencies = {
   confirm: async (options) => confirmPrompt(options),
   select: async (options) => selectPrompt(options),
   input: async (options) => inputPrompt(options),
+  password: async (options) => passwordPrompt(options),
+  saveGeminiApiKey: saveGlobalGeminiApiKey,
   writeOutput: (value) => process.stdout.write(value),
   writeError: (value) => process.stderr.write(value),
   setExitCode: (value) => {
@@ -572,6 +584,46 @@ export function createProgram(
     .version("0.1.0")
     .showHelpAfterError();
 
+  const configCommand = program
+    .command("config")
+    .description("Manage user-wide Git Intent configuration.");
+
+  const setGeminiKeyCommand = configCommand
+    .command("set-gemini-key")
+    .description("Securely save a Gemini API key for all projects.");
+  addAppearanceOptions(setGeminiKeyCommand).action(
+    async (options: Pick<InspectOptions, "theme" | "color">) => {
+      const theme = resolveTheme(options);
+      activeTheme = theme;
+      try {
+        if (!dependencies.isInteractiveTerminal()) {
+          throw new Error(
+            "This command requires an interactive terminal so the API key is not exposed in command history.",
+          );
+        }
+
+        const apiKey = await dependencies.password({
+          message: "Gemini API key:",
+          mask: "*",
+          validate: (value) =>
+            value.trim().length > 0 || "Enter a Gemini API key.",
+        });
+        const environmentFile = await dependencies.saveGeminiApiKey(apiKey);
+        dependencies.writeOutput(
+          `${theme.success(`Saved the Gemini API key for all projects in ${environmentFile}.`)}\n`,
+        );
+      } catch (error) {
+        reportActionError(
+          error,
+          "Gemini configuration cancelled.",
+          "Gemini configuration failed because of an unexpected error.",
+          theme,
+          dependencies,
+        );
+      }
+    },
+  );
+
   const inspectCommand = program
     .command("inspect")
     .description("Inspect the files and diff currently staged in Git.")
@@ -755,7 +807,7 @@ export async function waitForCliRun<T>(
 }
 
 export async function runCli(argv = process.argv): Promise<void> {
-  loadProjectEnvironment();
+  loadGitIntentEnvironment();
   await waitForCliRun(
     createProgram().parseAsync(argv),
     process.stdin.isTTY === true && process.stdout.isTTY === true,

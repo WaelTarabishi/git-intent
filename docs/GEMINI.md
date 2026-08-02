@@ -11,7 +11,20 @@ Create or view a key in
 configuring the key through `GEMINI_API_KEY` or `GOOGLE_API_KEY`. Git Intent
 supports both and gives `GOOGLE_API_KEY` precedence when both are present.
 
-The CLI automatically loads `.env` from the directory where it is run:
+Use Git Intent's one-time interactive setup to configure the key for every
+project. The prompt masks the value, so the key is not placed in command
+history or process arguments:
+
+```sh
+git-intent config set-gemini-key
+```
+
+The command stores the key in `~/.git-intent/.env`. Git Intent creates the file
+with owner-only permissions on operating systems that support POSIX file modes
+and automatically loads it each time the CLI starts.
+
+Alternatively, the CLI loads a project-specific `.env` from the directory
+where it is run:
 
 ```powershell
 Copy-Item .env.example .env
@@ -24,8 +37,9 @@ GEMINI_API_KEY=your-api-key
 ```
 
 The repository's `.gitignore` excludes `.env` and `.env.*`, while keeping
-`.env.example`. Never commit the real key. Variables already set by the shell
-take precedence over values in `.env`.
+`.env.example`. Never commit the real key. Configuration precedence is a
+variable already set by the shell, the current project's `.env`, then the
+user-wide `~/.git-intent/.env` file.
 
 PowerShell:
 
@@ -44,7 +58,8 @@ git-intent suggest --provider gemini
 The key is sent in the `x-goog-api-key` request header. It is never placed in
 the request URL or included in diagnostics. There is intentionally no API-key
 CLI option because command-line arguments can be retained in shell history and
-process listings.
+process listings. If no key is configured, the CLI directs the user to
+`git-intent config set-gemini-key`.
 
 ## Model and timeout
 

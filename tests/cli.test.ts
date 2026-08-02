@@ -127,6 +127,60 @@ describe("CLI options", () => {
   });
 });
 
+describe("config command", () => {
+  it("securely saves a Gemini API key for all projects", async () => {
+    const output: string[] = [];
+    const password = vi.fn(async () => "test-key");
+    const saveGeminiApiKey = vi.fn(
+      async () => "C:/Users/example/.git-intent/.env",
+    );
+
+    await createProgram({
+      isInteractiveTerminal: () => true,
+      password,
+      saveGeminiApiKey,
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "config",
+      "set-gemini-key",
+      "--no-color",
+    ]);
+
+    expect(password).toHaveBeenCalledWith(
+      expect.objectContaining({
+        message: "Gemini API key:",
+        mask: "*",
+      }),
+    );
+    expect(saveGeminiApiKey).toHaveBeenCalledWith("test-key");
+    expect(output.join("")).toContain("Saved the Gemini API key");
+    expect(output.join("")).toContain(".git-intent/.env");
+  });
+
+  it("refuses to read a key without an interactive terminal", async () => {
+    const errors: string[] = [];
+    const password = vi.fn(async () => "test-key");
+
+    await createProgram({
+      isInteractiveTerminal: () => false,
+      password,
+      writeError: (value) => errors.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "config",
+      "set-gemini-key",
+      "--no-color",
+    ]);
+
+    expect(password).not.toHaveBeenCalled();
+    expect(errors.join("")).toContain("requires an interactive terminal");
+    expect(process.exitCode).toBe(1);
+  });
+});
+
 describe("suggest command", () => {
   it("supports generate as an alias", async () => {
     const output: string[] = [];
