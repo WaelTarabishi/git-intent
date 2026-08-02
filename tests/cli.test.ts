@@ -150,7 +150,8 @@ describe("config command", () => {
 
     expect(password).toHaveBeenCalledWith(
       expect.objectContaining({
-        message: "Gemini API key:",
+        message:
+          "Gemini API key (use Shift+Insert if Ctrl+V does not paste):",
         mask: "*",
       }),
     );
@@ -178,6 +179,35 @@ describe("config command", () => {
     expect(password).not.toHaveBeenCalled();
     expect(errors.join("")).toContain("requires an interactive terminal");
     expect(process.exitCode).toBe(1);
+  });
+
+  it("securely reads a piped Gemini API key from standard input", async () => {
+    const output: string[] = [];
+    const password = vi.fn(async () => "prompt-key");
+    const readStdin = vi.fn(async () => "pasted-key\r\n");
+    const saveGeminiApiKey = vi.fn(
+      async () => "C:/Users/example/.git-intent/.env",
+    );
+
+    await createProgram({
+      isInteractiveTerminal: () => false,
+      password,
+      readStdin,
+      saveGeminiApiKey,
+      writeOutput: (value) => output.push(value),
+    }).parseAsync([
+      "node",
+      "git-intent",
+      "config",
+      "set-gemini-key",
+      "--stdin",
+      "--no-color",
+    ]);
+
+    expect(password).not.toHaveBeenCalled();
+    expect(readStdin).toHaveBeenCalledOnce();
+    expect(saveGeminiApiKey).toHaveBeenCalledWith("pasted-key\r\n");
+    expect(output.join("")).toContain("Saved the Gemini API key");
   });
 });
 

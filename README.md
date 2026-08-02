@@ -207,6 +207,14 @@ you type:
 git-intent config set-gemini-key
 ```
 
+On Windows, use `Shift+Insert` if `Ctrl+V` does not paste into the masked
+prompt. A clipboard-to-stdin fallback is also available and keeps the key out
+of command history and process arguments:
+
+```powershell
+Get-Clipboard -Raw | git-intent config set-gemini-key --stdin
+```
+
 This saves the key in `~/.git-intent/.env` with owner-only file permissions
 where the operating system supports them. The CLI automatically loads that
 file on startup.

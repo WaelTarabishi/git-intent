@@ -19,6 +19,17 @@ history or process arguments:
 git-intent config set-gemini-key
 ```
 
+If `Ctrl+V` does not paste inside the masked prompt on Windows, use
+`Shift+Insert` (or your terminal's configured paste shortcut). You can also
+copy the key and securely pipe the clipboard contents through standard input:
+
+```powershell
+Get-Clipboard -Raw | git-intent config set-gemini-key --stdin
+```
+
+The stdin form does not put the key in command history or process arguments,
+and the key is not printed by Git Intent.
+
 The command stores the key in `~/.git-intent/.env`. Git Intent creates the file
 with owner-only permissions on operating systems that support POSIX file modes
 and automatically loads it each time the CLI starts.
@@ -57,8 +68,8 @@ git-intent suggest --provider gemini
 
 The key is sent in the `x-goog-api-key` request header. It is never placed in
 the request URL or included in diagnostics. There is intentionally no API-key
-CLI option because command-line arguments can be retained in shell history and
-process listings. If no key is configured, the CLI directs the user to
+value option because command-line arguments can be retained in shell history
+and process listings. If no key is configured, the CLI directs the user to
 `git-intent config set-gemini-key`.
 
 ## Model and timeout

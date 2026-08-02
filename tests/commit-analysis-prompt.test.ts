@@ -58,4 +58,53 @@ describe("buildCommitAnalysisPrompt", () => {
       additionalProperties: false,
     });
   });
+
+  it("compacts mixed package-manager lockfiles without hiding source changes", () => {
+    const mixedLockfiles: ValidatedStagedChangeAnalysis = {
+      repositoryRoot: "C:/repo",
+      files: [
+        { path: "package.json", status: "modified", binary: false },
+        { path: "package-lock.json", status: "modified", binary: false },
+        { path: "pnpm-lock.yaml", status: "added", binary: false },
+        { path: "src/index.ts", status: "modified", binary: false },
+      ],
+      statistics: {
+        filesChanged: 4,
+        insertions: 8,
+        deletions: 2,
+        binaryFiles: 0,
+      },
+      diff: [
+        "diff --git a/package-lock.json b/package-lock.json",
+        "--- a/package-lock.json",
+        "+++ b/package-lock.json",
+        "-      \\\"version\\\": \\\"1.0.0\\\"",
+        "+      \\\"version\\\": \\\"1.1.0\\\"",
+        "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml",
+        "--- /dev/null",
+        "+++ b/pnpm-lock.yaml",
+        "+lockfileVersion: '9.0'",
+        "+packages:",
+        "diff --git a/src/index.ts b/src/index.ts",
+        "--- a/src/index.ts",
+        "+++ b/src/index.ts",
+        "+export const ready = true;",
+      ].join("\n"),
+    };
+
+    const result = buildCommitAnalysisPrompt(mixedLockfiles);
+
+    expect(result.prompt).toContain(
+      "Lockfile: package-lock.json [modified, package manager: npm]",
+    );
+    expect(result.prompt).toContain(
+      "Lockfile: pnpm-lock.yaml [added, package manager: pnpm]",
+    );
+    expect(result.prompt).toContain("Multiple package managers represented: npm, pnpm");
+    expect(result.prompt).toContain("generated lockfile content: 1 additions, 1 deletions");
+    expect(result.prompt).toContain("generated lockfile content: 2 additions, 0 deletions");
+    expect(result.prompt).not.toContain("lockfileVersion: '9.0'");
+    expect(result.prompt).not.toContain("\\\"version\\\": \\\"1.1.0\\\"");
+    expect(result.prompt).toContain("+export const ready = true;");
+  });
 });

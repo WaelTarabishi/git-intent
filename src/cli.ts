@@ -80,6 +80,10 @@ interface SuggestOptions {
   animation?: boolean;
 }
 
+interface SetGeminiKeyOptions extends Pick<InspectOptions, "theme" | "color"> {
+  stdin?: boolean;
+}
+
 interface SelectChoice {
   name: string;
   value: string;
@@ -115,6 +119,7 @@ export interface CliDependencies {
     message: string;
     validate(value: string): boolean | string;
   }): Promise<string>;
+  readStdin(): Promise<string>;
   password(options: {
     message: string;
     mask?: boolean | string;
@@ -145,6 +150,14 @@ const defaultDependencies: CliDependencies = {
   confirm: async (options) => confirmPrompt(options),
   select: async (options) => selectPrompt(options),
   input: async (options) => inputPrompt(options),
+  readStdin: async () => {
+    process.stdin.setEncoding("utf8");
+    const chunks: string[] = [];
+    for await (const chunk of process.stdin) {
+      chunks.push(chunk);
+    }
+    return chunks.join("");
+  },
   password: async (options) => passwordPrompt(options),
   saveGeminiApiKey: saveGlobalGeminiApiKey,
   writeOutput: (value) => process.stdout.write(value),
@@ -590,24 +603,32 @@ export function createProgram(
 
   const setGeminiKeyCommand = configCommand
     .command("set-gemini-key")
-    .description("Securely save a Gemini API key for all projects.");
+    .description("Securely save a Gemini API key for all projects.")
+    .option(
+      "--stdin",
+      "read the API key from standard input instead of opening a prompt",
+    );
   addAppearanceOptions(setGeminiKeyCommand).action(
-    async (options: Pick<InspectOptions, "theme" | "color">) => {
+    async (options: SetGeminiKeyOptions) => {
       const theme = resolveTheme(options);
       activeTheme = theme;
       try {
-        if (!dependencies.isInteractiveTerminal()) {
+        if (options.stdin !== true && !dependencies.isInteractiveTerminal()) {
           throw new Error(
-            "This command requires an interactive terminal so the API key is not exposed in command history.",
+            "This command requires an interactive terminal. Pipe the key to `git-intent config set-gemini-key --stdin` when a prompt is unavailable.",
           );
         }
 
-        const apiKey = await dependencies.password({
-          message: "Gemini API key:",
-          mask: "*",
-          validate: (value) =>
-            value.trim().length > 0 || "Enter a Gemini API key.",
-        });
+        const apiKey =
+          options.stdin === true
+            ? await dependencies.readStdin()
+            : await dependencies.password({
+                message:
+                  "Gemini API key (use Shift+Insert if Ctrl+V does not paste):",
+                mask: "*",
+                validate: (value) =>
+                  value.trim().length > 0 || "Enter a Gemini API key.",
+              });
         const environmentFile = await dependencies.saveGeminiApiKey(apiKey);
         dependencies.writeOutput(
           `${theme.success(`Saved the Gemini API key for all projects in ${environmentFile}.`)}\n`,
