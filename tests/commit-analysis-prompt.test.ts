@@ -78,8 +78,8 @@ describe("buildCommitAnalysisPrompt", () => {
         "diff --git a/package-lock.json b/package-lock.json",
         "--- a/package-lock.json",
         "+++ b/package-lock.json",
-        "-      \\\"version\\\": \\\"1.0.0\\\"",
-        "+      \\\"version\\\": \\\"1.1.0\\\"",
+        '-      "version": "1.0.0"',
+        '+      "version": "1.1.0"',
         "diff --git a/pnpm-lock.yaml b/pnpm-lock.yaml",
         "--- /dev/null",
         "+++ b/pnpm-lock.yaml",
@@ -100,11 +100,17 @@ describe("buildCommitAnalysisPrompt", () => {
     expect(result.prompt).toContain(
       "Lockfile: pnpm-lock.yaml [added, package manager: pnpm]",
     );
-    expect(result.prompt).toContain("Multiple package managers represented: npm, pnpm");
-    expect(result.prompt).toContain("generated lockfile content: 1 additions, 1 deletions");
-    expect(result.prompt).toContain("generated lockfile content: 2 additions, 0 deletions");
+    expect(result.prompt).toContain(
+      "Multiple package managers represented: npm, pnpm",
+    );
+    expect(result.prompt).toContain(
+      "generated lockfile content: 1 additions, 1 deletions",
+    );
+    expect(result.prompt).toContain(
+      "generated lockfile content: 2 additions, 0 deletions",
+    );
     expect(result.prompt).not.toContain("lockfileVersion: '9.0'");
-    expect(result.prompt).not.toContain("\\\"version\\\": \\\"1.1.0\\\"");
+    expect(result.prompt).not.toContain('"version": "1.1.0"');
     expect(result.prompt).toContain("+export const ready = true;");
   });
 });

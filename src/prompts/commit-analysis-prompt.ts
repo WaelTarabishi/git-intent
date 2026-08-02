@@ -21,7 +21,9 @@ const dependencyLockfiles = new Map<string, string>([
 ]);
 
 function basename(filePath: string): string {
-  return filePath.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase() ?? "";
+  return (
+    filePath.replaceAll("\\", "/").split("/").at(-1)?.toLowerCase() ?? ""
+  );
 }
 
 function dependencyLockfileManager(filePath: string): string | undefined {
@@ -33,11 +35,8 @@ function isPackageManifest(filePath: string): boolean {
 }
 
 function isDependencyLockfileDiffHeader(header: string): boolean {
-  const normalizedHeader = header.toLowerCase();
-  return [...dependencyLockfiles.keys()].some((name) =>
-    new RegExp(`(?:^|[/\\\\])${name.replaceAll(".", "\\\\.")}(?:[\\s\"]|$)`, "u").test(
-      normalizedHeader,
-    ),
+  return /(?:^|[/\\])(?:package-lock\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|bun\.lockb?)(?:[\s"]|$)/iu.test(
+    header,
   );
 }
 
